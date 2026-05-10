@@ -1,0 +1,93 @@
+/*
+ * DeepTrade 官方网站全局样式
+ *
+ * 顺序很关键：
+ *   1. fumadocs-ui/css/style.css 内含 `@import "tailwindcss"` + neutral + preset，
+ *      不需要再单独引入 tailwindcss。
+ *   2. @source 让 Tailwind 扫描 fumadocs-ui 的 dist，确保它使用的 utility 不被
+ *      tree-shake 掉。
+ *   3. @theme 定义 DeepTrade 自有 design tokens，会自动派生为 utilities
+ *      (例如 --color-background → bg-background)。
+ *   4. :root 覆盖 fumadocs UI 的 --color-fd-* 变量，让文档站继承落地页的暗色。
+ *   5. 强制 dark：不挂 .dark class，全站单一暗色。
+ */
+
+@import 'fumadocs-ui/css/style.css';
+@source '../node_modules/fumadocs-ui/dist/**/*.js';
+
+@theme {
+  /* ========== 颜色 ========== */
+  --color-background: #000000;
+  --color-foreground: #f8fafc; /* slate-50 */
+  --color-muted: #94a3b8; /* slate-400 */
+  --color-muted-2: #64748b; /* slate-500 */
+  --color-surface: #0f172a; /* slate-900 */
+  --color-surface-2: #1e293b; /* slate-800 */
+  --color-border: #1e293b;
+  --color-border-soft: rgba(255, 255, 255, 0.08);
+  --color-accent: #f8fafc;
+  --color-diff-add: #22c55e;
+  --color-diff-remove: #ef4444;
+  --color-link: #e2e8f0;
+
+  /* ========== 字体（具体 family 在 layout.tsx 注入 next/font 变量） ========== */
+  --font-sans:
+    var(--font-inter), 'Inter', 'Geist', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono:
+    var(--font-jetbrains-mono), 'JetBrains Mono', 'Geist Mono', ui-monospace, SFMono-Regular,
+    monospace;
+
+  /* ========== 字号缩放 ========== */
+  --text-hero: clamp(2.5rem, 5.5vw, 4.5rem);
+  --text-section: clamp(1.875rem, 3vw, 2.5rem);
+
+  /* ========== 间距 ========== */
+  --spacing-section: clamp(4rem, 8vw, 8rem);
+
+  /* ========== 圆角 ========== */
+  --radius-card: 0.75rem; /* 12px */
+  --radius-pill: 9999px;
+}
+
+/* 全站强制暗色：不依赖 class，避免 fumadocs 的 ThemeProvider 在切换时闪烁 */
+:root {
+  color-scheme: dark;
+
+  /* 把 fumadocs 的 --color-fd-* 全部映射到 DeepTrade tokens */
+  --color-fd-background: var(--color-background);
+  --color-fd-foreground: var(--color-foreground);
+  --color-fd-muted: var(--color-surface);
+  --color-fd-muted-foreground: var(--color-muted);
+  --color-fd-popover: var(--color-surface);
+  --color-fd-popover-foreground: var(--color-foreground);
+  --color-fd-card: var(--color-surface);
+  --color-fd-card-foreground: var(--color-foreground);
+  --color-fd-border: var(--color-border);
+  --color-fd-primary: var(--color-foreground);
+  --color-fd-primary-foreground: var(--color-background);
+  --color-fd-secondary: var(--color-surface-2);
+  --color-fd-secondary-foreground: var(--color-foreground);
+  --color-fd-accent: var(--color-surface-2);
+  --color-fd-accent-foreground: var(--color-foreground);
+  --color-fd-ring: var(--color-foreground);
+}
+
+html,
+body {
+  background: var(--color-background);
+  color: var(--color-foreground);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background: var(--color-foreground);
+  color: var(--color-background);
+}
+
+/* focus-visible 全站统一样式，符合 §11.2 可访问性预算 */
+:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--color-foreground) 60%, transparent);
+  outline-offset: 2px;
+}

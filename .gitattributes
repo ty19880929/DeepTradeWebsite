@@ -1,0 +1,15 @@
+# 全部文本文件强制 LF，避免 Windows 上的 CRLF 泄漏到 Linux CI 与 Vercel runner
+* text=auto eol=lf
+
+# 二进制（保留原样）
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.avif binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.otf binary
