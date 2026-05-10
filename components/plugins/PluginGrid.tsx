@@ -72,7 +72,7 @@ export function PluginGrid({ plugins }: PluginGridProps) {
           这个分类暂无官方插件。
         </div>
       ) : (
-        <ul className="mt-8 grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+        <ul className="mt-8 grid grid-cols-1 gap-6 md:grid-cols-2">
           {visible.map((plugin) => (
             <li key={plugin.id} className="contents">
               <PluginCard plugin={plugin} />

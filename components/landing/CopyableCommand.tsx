@@ -69,7 +69,7 @@ export function CopyableCommand({ command, prefix = '$ ', className }: CopyableC
         className,
       )}
     >
-      <code className="select-all whitespace-nowrap">
+      <code className="min-w-0 flex-1 select-all overflow-x-auto whitespace-nowrap">
         <span className="text-muted-2 mr-1 select-none">{prefix}</span>
         {command}
       </code>
