@@ -96,6 +96,7 @@
 [data-theme='light'] {
   color-scheme: light;
 
+  /* 底层 DeepTrade tokens */
   --color-background: #ffffff;
   --color-foreground: #0f172a; /* slate-900：正文与标题 */
   --color-muted: #475569; /* slate-600：副文 */
@@ -106,6 +107,35 @@
   --color-border-soft: rgba(15, 23, 42, 0.08);
   --color-accent: #0f172a;
   --color-link: #1e293b; /* slate-800 */
+
+  /*
+   * 防御：显式覆盖一遍 fumadocs 所有 --color-fd-*。
+   *
+   * 已知 LightningCSS 编译期会剥掉 fumadocs CSS 里 .dark 前缀（例如 neutral.css
+   * 的 `.dark #nd-sidebar` 变成无条件 #nd-sidebar），把字面深色钉死到具体元素上。
+   * :root 那一层用 var() 间接引用绕不过 ID 选择器特异性。
+   *
+   * 这里在 [data-theme="light"] 直接给变量赋值，相当于在 docs 包裹元素自身写
+   * 值，对所有特异性 ≤ (0,1,0,0) 的元素级 utility（例如 bg-fd-card）都能立即
+   * 拿到亮色。对 ID 级硬冲突（如 #nd-sidebar）走下面单独的 [data-theme="light"]
+   * #nd-sidebar 兜底。
+   */
+  --color-fd-background: var(--color-background);
+  --color-fd-foreground: var(--color-foreground);
+  --color-fd-muted: var(--color-surface);
+  --color-fd-muted-foreground: var(--color-muted);
+  --color-fd-popover: var(--color-surface);
+  --color-fd-popover-foreground: var(--color-foreground);
+  --color-fd-card: var(--color-surface);
+  --color-fd-card-foreground: var(--color-foreground);
+  --color-fd-border: var(--color-border);
+  --color-fd-primary: var(--color-foreground);
+  --color-fd-primary-foreground: var(--color-background);
+  --color-fd-secondary: var(--color-surface-2);
+  --color-fd-secondary-foreground: var(--color-foreground);
+  --color-fd-accent: var(--color-surface-2);
+  --color-fd-accent-foreground: var(--color-foreground);
+  --color-fd-ring: var(--color-foreground);
 }
 
 /*
