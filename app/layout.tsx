@@ -3,6 +3,8 @@ import { Inter, JetBrains_Mono } from 'next/font/google';
 import { Analytics } from '@vercel/analytics/next';
 import { RootProvider } from 'fumadocs-ui/provider/next';
 
+import { SITE, buildMetadata } from '@/lib/seo';
+
 import './globals.css';
 
 const inter = Inter({
@@ -18,31 +20,16 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  metadataBase: new URL('https://deeptrade.tiey.ai'),
+  metadataBase: new URL(SITE.url),
+  applicationName: SITE.name,
+  authors: [{ name: 'DeepTrade Contributors' }],
   title: {
     default: 'DeepTrade — 本地运行的 A 股选股 CLI 框架',
     template: '%s · DeepTrade',
   },
-  description:
-    'tushare 行情 + 兼容 OpenAI LLM + DuckDB 单机仓库 + 纯透传式插件机制。你的数据，你的策略，全在本地。',
-  applicationName: 'DeepTrade',
-  authors: [{ name: 'DeepTrade Contributors' }],
-  openGraph: {
-    type: 'website',
-    locale: 'zh_CN',
-    siteName: 'DeepTrade',
-    title: 'DeepTrade — 本地运行的 A 股选股 CLI 框架',
-    description:
-      'tushare 行情 + 兼容 OpenAI LLM + DuckDB 单机仓库 + 纯透传式插件机制。你的数据，你的策略，全在本地。',
-    images: ['/og-default.png'],
-  },
-  twitter: {
-    card: 'summary_large_image',
-    title: 'DeepTrade — 本地运行的 A 股选股 CLI 框架',
-    description: 'tushare + OpenAI 兼容 LLM + DuckDB 的本地化选股工具',
-    images: ['/og-default.png'],
-  },
-  robots: { index: true, follow: true },
+  // openGraph / twitter / canonical / robots 全部由 lib/seo.ts 工厂统一生成；
+  // 这里只声明根级落地页的"默认"那份，子页通过 buildMetadata 覆盖。
+  ...buildMetadata({ ogKind: 'default' }),
 };
 
 export const viewport: Viewport = {

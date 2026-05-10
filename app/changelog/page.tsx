@@ -6,11 +6,14 @@ import remarkGfm from 'remark-gfm';
 
 import { Footer } from '@/components/landing/Footer';
 import { Navbar } from '@/components/landing/Navbar';
+import { buildMetadata } from '@/lib/seo';
 
-export const metadata: Metadata = {
+export const metadata: Metadata = buildMetadata({
   title: '更新日志',
   description: 'DeepTrade 框架版本变更历史 — 构建期自动从主仓 CHANGELOG.md 同步',
-};
+  path: '/changelog',
+  ogKind: 'changelog',
+});
 
 const SOURCE_PATH = join(process.cwd(), 'content', 'changelog.md');
 const REPO_CHANGELOG_URL = 'https://github.com/ty19880929/DeepTrade/blob/main/CHANGELOG.md';

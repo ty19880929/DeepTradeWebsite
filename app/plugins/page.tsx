@@ -4,12 +4,15 @@ import { Footer } from '@/components/landing/Footer';
 import { Navbar } from '@/components/landing/Navbar';
 import { PluginGrid } from '@/components/plugins/PluginGrid';
 import { loadPluginRecords } from '@/lib/registry';
+import { buildMetadata } from '@/lib/seo';
 
-export const metadata: Metadata = {
+export const metadata: Metadata = buildMetadata({
   title: '官方插件',
   description:
     '从 DeepTradePluginOfficial 注册表自动同步 — 按 strategy / channel 类型筛选，CopyableCommand 一键复制安装命令',
-};
+  path: '/plugins',
+  ogKind: 'plugin',
+});
 
 /**
  * 插件墙 RSC（SSG）。构建期一次性拉取注册表 + 可选 GitHub 增强；

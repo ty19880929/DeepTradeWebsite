@@ -9,10 +9,13 @@ import { Hero } from '@/components/landing/Hero';
 import { Navbar } from '@/components/landing/Navbar';
 import { DiffViewer } from '@/components/landing/DiffViewer';
 import { TerminalDemo } from '@/components/landing/TerminalDemo';
+import { buildMetadata } from '@/lib/seo';
 
-export const metadata: Metadata = {
+export const metadata: Metadata = buildMetadata({
   title: 'DeepTrade — 本地运行的 A 股选股 CLI 框架',
-};
+  path: '/',
+  ogKind: 'default',
+});
 
 const ECOSYSTEM = [
   { id: 'deepseek', display: 'DeepSeek', href: 'https://www.deepseek.com' },
