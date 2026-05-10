@@ -108,6 +108,24 @@
   --color-link: #1e293b; /* slate-800 */
 }
 
+/*
+ * Fumadocs 在 css/lib/neutral.css 里写了 `.dark #nd-sidebar { ... }`，但
+ * Tailwind v4 / LightningCSS 处理后把 `.dark` 前缀剥掉了，部署产物变成无条件
+ * 的 `#nd-sidebar { --color-fd-muted: #292929; --color-fd-secondary: #2e2e2e;
+ * --color-fd-muted-foreground: #b8b8b8; }`，会把侧栏内部的字面深色钉死，
+ * 即便外层包了 [data-theme="light"]，CSS 变量级覆盖也无效（#nd-sidebar 直
+ * 接给变量赋字面值，特异性 > 我们外层 :root 的 var() 间接引用）。
+ *
+ * 修：用 [data-theme="light"] #nd-sidebar 这个组合选择器特异性 (0,1,1,0) >
+ * 单 #nd-sidebar (0,1,0,0)，把 sidebar 内的 fumadocs token 重新指回我们的
+ * 亮色 tokens。
+ */
+[data-theme='light'] #nd-sidebar {
+  --color-fd-muted: var(--color-surface);
+  --color-fd-secondary: var(--color-surface-2);
+  --color-fd-muted-foreground: var(--color-muted);
+}
+
 html,
 body {
   background: var(--color-background);

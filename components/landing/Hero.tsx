@@ -24,6 +24,8 @@ export function Hero({ installCommand, docsHref }: HeroProps) {
 
       <Link
         href={docsHref}
+        target="_blank"
+        rel="noopener noreferrer"
         className="text-link hover:text-foreground mt-6 inline-flex items-center gap-2 text-sm transition-colors"
       >
         阅读文档

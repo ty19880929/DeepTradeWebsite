@@ -48,6 +48,8 @@ export function Navbar() {
             <Link
               key={link.href}
               href={link.href}
+              target="_blank"
+              rel="noopener noreferrer"
               className="text-link hover:text-foreground transition-colors"
             >
               {link.label}
