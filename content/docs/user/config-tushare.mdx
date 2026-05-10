@@ -1,0 +1,93 @@
+---
+title: 配置 Tushare
+description: 录入 tushare token，配置 RPS 与超时；环境变量 DEEPTRADE_TUSHARE_TOKEN 优先于数据库存储；通过 OS keyring 加密保存
+---
+
+[Tushare](https://tushare.pro) 是 DeepTrade 的默认行情来源。绝大多数策略插件都依赖它取分钟/日线数据。需要先在 tushare.pro 注册账号并获取 **token**。
+
+## 录入 token
+
+<CopyableCommand command="deeptrade config set-tushare" />
+
+完全交互式，依次问：
+
+| 问题 | 默认 | 说明 |
+|---|---|---|
+| **Token** | 无 | 从 [tushare.pro/user/token](https://tushare.pro/user/token) 复制；密码方式输入，不回显 |
+| **请求 RPS** | `6.0` | 每秒请求上限；按你的会员级别调（普通 200 分会员通常 5-6 RPS 安全） |
+| **超时秒数** | `30` | 单次请求超时 |
+
+<Callout type="info">
+**框架不会主动连接 tushare 验证 token 是否有效。** 第一个真正发请求的策略插件（如 `limit-up-board screen`）会在那时报错告诉你 token 有问题。如果你想立刻自检，参见后面的"测试连通性"章节。
+</Callout>
+
+## 查看当前配置
+
+<CopyableCommand command="deeptrade config show" />
+
+会列出所有非 secret 配置 + 已设 secret 的脱敏摘要（如 `tushare.token: tk_xxxxx****`）。
+
+## 修改
+
+再次跑 `set-tushare`，新输入会覆盖旧值。
+
+## 安全：token 存在哪？
+
+DeepTrade 用**双层秘钥仓库**：
+
+<Steps>
+<Step>
+
+### 优先：操作系统 keyring
+
+- macOS：Keychain
+- Windows：Credential Manager
+- Linux：Secret Service（gnome-keyring / kwallet）
+
+</Step>
+<Step>
+
+### 回退：DuckDB `secret_store` 表
+
+如果你的系统没装可用的 keyring（典型：headless Linux 服务器），框架会回退到 `secret_store` 表内的加密存储。
+
+</Step>
+</Steps>
+
+## 环境变量优先
+
+如果设置了 `DEEPTRADE_TUSHARE_TOKEN`，**它的优先级高于数据库存储**：
+
+```bash
+export DEEPTRADE_TUSHARE_TOKEN="your-token"
+```
+
+策略运行时按此顺序解析：
+
+1. 环境变量 `DEEPTRADE_TUSHARE_TOKEN`
+2. OS keyring 的 `tushare.token`
+3. DuckDB `secret_store` 表
+4. 报错"未配置"
+
+> 这意味着 CI / 容器场景下你完全可以**不**跑 `set-tushare`，直接靠环境变量注入。
+
+## 测试连通性（可选）
+
+`deeptrade config` 没有内置的 `test-tushare` 命令。最简单的连通性测试是跑任一策略插件最轻的命令，例如安装后：
+
+<CopyableCommand command="deeptrade limit-up-board screen --date 20260101" />
+
+如果 token / RPS / 超时配置都正常，会跑通到调用 tushare API 的步骤；token 错误会立即在终端报错。
+
+## 清理
+
+目前 CLI 没有专门的 `clear-tushare` 命令。如需清理：
+
+- **OS keyring**：到系统的密码管理工具里删 `deeptrade.tushare.token` 条目
+- **DuckDB**：`deeptrade db sql "DELETE FROM secret_store WHERE key='tushare.token'"`
+
+## 下一步
+
+→ [配置 LLM Provider](/docs/user/config-llm)
+
+> 关键词：tushare、token、RPS、超时、配置、行情、数据源、A 股、keyring、安全、加密、DEEPTRADE_TUSHARE_TOKEN、环境变量

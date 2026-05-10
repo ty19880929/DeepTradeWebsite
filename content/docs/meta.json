@@ -1,5 +1,11 @@
 {
   "title": "DeepTrade 文档",
-  "pages": ["index"],
+  "pages": [
+    "index",
+    "---用户手册---",
+    "user",
+    "---开发者手册---",
+    "developer"
+  ],
   "defaultOpen": true
 }

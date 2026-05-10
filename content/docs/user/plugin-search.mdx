@@ -1,0 +1,91 @@
+---
+title: 浏览插件注册表
+description: deeptrade plugin search / info 命令查询官方注册表，区分 strategy 类策略插件与 channel 类推送渠道插件
+---
+
+DeepTrade 框架本体只是运行时。**所有能跑出选股结果的"策略"和能把结果推送出去的"渠道"，都是独立的插件包**。它们维护在 [DeepTradePluginOfficial](https://github.com/ty19880929/DeepTradePluginOfficial) 注册表里。
+
+## 插件类型
+
+| `type` | 含义 | 示例 |
+|---|---|---|
+| `strategy` | 策略插件，提供 CLI 子命令跑选股/分析 | `limit-up-board`、`volume-anomaly` |
+| `channel` | 渠道插件，把通知发到具体 IM 或日志 | `stdout-channel` |
+
+## 列出全部官方插件
+
+<CopyableCommand command="deeptrade plugin search" />
+
+输出 Rich 表格：
+
+| 列 | 含义 |
+|---|---|
+| `plugin_id` | 全局唯一 id（如 `limit-up-board`） |
+| `name` | 中文展示名 |
+| `type` | `strategy` / `channel` |
+| `description` | 一句话说明 |
+
+## 关键词过滤
+
+<CopyableCommand command="deeptrade plugin search 打板" />
+
+会按 `name` / `description` 模糊匹配。中文支持。
+
+## 看插件详情
+
+<CopyableCommand command="deeptrade plugin info limit-up-board" />
+
+行为分两种：
+
+<Steps>
+<Step>
+
+### 已安装
+
+输出完整 `deeptrade_plugin.yaml` 内容：版本、entrypoint、声明的表、stage profiles 等。
+
+</Step>
+<Step>
+
+### 未安装
+
+回退到注册表 `index.json` 里的条目：repo、subdir、tag_prefix、min_framework_version。
+
+</Step>
+</Steps>
+
+## 注册表来源与缓存
+
+注册表从这个地址拉：
+
+```text
+https://raw.githubusercontent.com/ty19880929/DeepTradePluginOfficial/main/registry/index.json
+```
+
+带 ETag 缓存到本地：
+
+```text
+~/.deeptrade/plugins/cache/registry-cache.json
+```
+
+第一次跑会拉完整索引（一般 ≤ 1 秒）。之后用 ETag 命中。**网络断了也能用缓存继续 search。**
+
+## 强制刷新缓存
+
+<CopyableCommand command="deeptrade plugin search --no-cache" />
+
+跳过 ETag，强制重新拉。
+
+## 注册表为什么不集成在框架里？
+
+> 这是个常见疑问，写一下设计权衡：
+>
+> 1. **生命周期分离**：注册表更新（新插件、版本号）频率远高于框架本身；不能让用户为加一个新插件升一次框架。
+> 2. **关注点分离**：框架代码审计仅限 `deeptrade-quant`；插件审计在 `DeepTradePluginOfficial`，PR 流程独立。
+> 3. **第三方注册表**：未来支持私有注册表时，你只要换 URL，不用 fork 框架。
+
+## 下一步
+
+→ [安装插件](/docs/user/plugin-install)
+
+> 关键词：plugin、search、info、注册表、registry、官方插件、limit-up-board、volume-anomaly、stdout-channel、strategy、channel、打板、成交量异动

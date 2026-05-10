@@ -1,0 +1,156 @@
+---
+title: 理解报告产物
+description: 策略产出物按 run_id 落到 ~/.deeptrade/reports/<run_id>/；DuckDB 中按 plugin_id + run_id 查 llm_calls 与 tushare_calls 审计；常见 SQL 查询样例
+---
+
+每次跑策略都会生成两类产物：
+
+| 类型 | 位置 | 由谁定义 |
+|---|---|---|
+| **文件型报告** | `~/.deeptrade/reports/<run_id>/` | 插件自己写（CSV / JSONL / Markdown / HTML 等） |
+| **数据库审计** | DuckDB 中 `llm_calls` / `tushare_calls` / `<plugin>_*` 表 | 框架 + 插件协作 |
+
+## 文件型报告
+
+进入 reports 目录看一眼：
+
+```bash
+ls ~/.deeptrade/reports/
+```
+
+每个子目录就是一个 `run_id`。具体文件由插件决定，常见结构：
+
+```text
+~/.deeptrade/reports/20260108_a3f/
+├── candidates.csv         # screen 输出的候选股
+├── analysis.jsonl         # analyze 阶段每只股一行 JSON
+├── summary.md             # 人类可读的总结报告
+└── _meta.json             # 这次 run 的元数据：开始/结束时间、用的 LLM provider
+```
+
+> **不要**把这个目录当成稳定 API。插件版本升级时文件结构可能变；想稳定消费请走数据库表（见下文）。
+
+## 框架审计表
+
+DeepTrade 给每次 LLM / tushare 调用都留了**完整审计**。
+
+### `llm_calls`
+
+每个 LLM 请求记一行。
+
+```sql
+SELECT created_at, plugin_id, run_id, provider, model, prompt_tokens, completion_tokens, latency_ms
+FROM llm_calls
+WHERE plugin_id = 'volume-anomaly'
+  AND run_id = '20260108_a3f'
+ORDER BY created_at;
+```
+
+可看到这次 run 里每个 LLM 调用的耗时与 token 消耗。
+
+### `tushare_calls`
+
+每个 tushare API 调用记一行。
+
+```sql
+SELECT api_name, params, latency_ms, status_code
+FROM tushare_calls
+WHERE plugin_id = 'volume-anomaly'
+  AND run_id = '20260108_a3f'
+  AND status_code != 0;
+```
+
+排查：哪个 tushare 接口被频繁调用、哪些慢、有没有 rate limit 错。
+
+## 直接查 DuckDB
+
+DeepTrade CLI 自带一个 SQL 通道：
+
+<CopyableCommand command='deeptrade db sql "SELECT COUNT(*) FROM llm_calls"' />
+
+或者用任何 DuckDB 客户端（CLI / DBeaver / Tableau）打开数据库文件：
+
+```bash
+duckdb ~/.deeptrade/deeptrade.duckdb
+```
+
+<Callout type="warn">
+DuckDB 是**单进程单写**——你打开的客户端如果加了写锁，正在跑的策略会被阻塞。**只读模式**是安全的：
+```bash
+duckdb -readonly ~/.deeptrade/deeptrade.duckdb
+```
+</Callout>
+
+## 常见查询场景
+
+### 1. 看最近 7 天哪些 run 用了多少 LLM token
+
+```sql
+SELECT
+  run_id,
+  plugin_id,
+  SUM(prompt_tokens + completion_tokens) AS total_tokens,
+  SUM(latency_ms) / 1000.0 AS total_seconds
+FROM llm_calls
+WHERE created_at >= NOW() - INTERVAL 7 DAY
+GROUP BY run_id, plugin_id
+ORDER BY total_tokens DESC;
+```
+
+### 2. 找出 tushare 限流的 run
+
+```sql
+SELECT run_id, api_name, COUNT(*) AS hits
+FROM tushare_calls
+WHERE status_code = 40203  -- tushare 频率限制错误码
+GROUP BY run_id, api_name
+ORDER BY hits DESC;
+```
+
+### 3. 多 provider AB 对比
+
+```sql
+SELECT
+  provider,
+  AVG(latency_ms) AS avg_latency,
+  COUNT(*) AS calls,
+  SUM(completion_tokens) AS total_completion_tokens
+FROM llm_calls
+WHERE plugin_id = 'volume-anomaly'
+  AND run_id IN ('run_a_qwen', 'run_b_deepseek')
+GROUP BY provider;
+```
+
+## 业务表
+
+每个策略插件还可能维护自己的业务表，例如：
+
+| 插件 | 表 | 用途 |
+|---|---|---|
+| `limit-up-board` | `lub_runs` / `lub_screens` | 打板 run 主表 + 候选股快照 |
+| `volume-anomaly` | `va_runs` / `va_anomalies` | 异动 run 主表 + 异动股快照 |
+
+这些表的列由插件 manifest 定义。在插件 README / `deeptrade plugin info <id>` 里能看到完整 schema。
+
+## 清理旧报告
+
+文件型报告会随时间累积。手动清理：
+
+```bash
+rm -rf ~/.deeptrade/reports/<old_run_id>/
+```
+
+DuckDB 里对应的 `llm_calls` / `tushare_calls` 行需要单独删（保留它们能追溯历史成本）：
+
+```sql
+DELETE FROM llm_calls    WHERE run_id = '<old_run_id>';
+DELETE FROM tushare_calls WHERE run_id = '<old_run_id>';
+```
+
+业务表的清理由插件提供（多数有 `<plugin> purge --before <date>` 之类的命令；以插件 `--help` 为准）。
+
+## 下一步
+
+→ [配置推送渠道](/docs/user/notify)
+
+> 关键词：reports、~/.deeptrade/reports、run_id、llm_calls、tushare_calls、审计、SQL 查询、DuckDB、产物、CSV、JSONL、limit-up-board、volume-anomaly

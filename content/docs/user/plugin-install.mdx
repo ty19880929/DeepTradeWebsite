@@ -1,0 +1,159 @@
+---
+title: 安装、升级、卸载插件
+description: 通过 deeptrade plugin install/upgrade/uninstall 命令管理插件；支持注册表短名、GitHub URL、本地路径三种来源；--ref 锁版本，SemVer 强制单向升级
+---
+
+DeepTrade 的插件安装走**单一命令**：
+
+<CopyableCommand command="deeptrade plugin install <SOURCE>" />
+
+`<SOURCE>` 框架会按下列**优先级顺序**自动判断：
+
+<Steps>
+<Step>
+
+### 注册表短名
+
+最常见路径。例如：
+
+<CopyableCommand command="deeptrade plugin install limit-up-board" />
+
+框架去注册表查 `plugin_id == "limit-up-board"` 对应的 `repo` + `subdir`，然后 git clone 到临时目录再装。
+
+</Step>
+<Step>
+
+### Git 仓库 URL
+
+适合自有插件或非官方仓库：
+
+<CopyableCommand command="deeptrade plugin install https://github.com/myuser/my-plugin.git" />
+
+也支持 SSH 形式：`git@github.com:user/repo.git`。
+
+</Step>
+<Step>
+
+### 本地路径
+
+开发插件时最常用：
+
+<CopyableCommand command="deeptrade plugin install ./my-plugin/" />
+
+会把目录原样 copy 到 `~/.deeptrade/plugins/installed/<plugin_id>/<version>/`。
+
+</Step>
+</Steps>
+
+## 锁定版本：`--ref`
+
+来源是 Git 时（包括注册表短名，因为框架内部转 git）可以指定分支 / tag / sha：
+
+<CopyableCommand command="deeptrade plugin install limit-up-board --ref limit-up-board-v0.6.1" />
+
+<CopyableCommand command="deeptrade plugin install https://github.com/myuser/my-plugin.git --ref dev" />
+
+不带 `--ref` 时按注册表声明的 `tag_prefix` 自动选最新 release。
+
+## 跳过确认：`-y`
+
+CI / 脚本场景：
+
+<CopyableCommand command="deeptrade plugin install limit-up-board -y" />
+
+跳过"是否真的安装？"确认。
+
+## 安装时框架做了什么？
+
+按设计文档 §架构 的 install 管道，原子性保证：
+
+<Steps>
+<Step>
+
+### 1. 解析 manifest
+
+读 `deeptrade_plugin.yaml`，校验 `plugin_id` 不是保留字（`init / config / plugin / data`），版本与 `min_framework_version` 兼容，`llm_tools=false`。
+
+</Step>
+<Step>
+
+### 2. 校验 migrations sha256
+
+manifest 声明的每条 migration 文件都校验 checksum，**任一不匹配立即 fail**（不会动数据库）。
+
+</Step>
+<Step>
+
+### 3. copy 文件 + 写迁移
+
+在一个 DuckDB 事务里：apply migrations、INSERT 到 `plugins / plugin_tables / plugin_schema_migrations`。事务失败 → 删 copy。
+
+</Step>
+<Step>
+
+### 4. 加载 entrypoint + validate_static
+
+框架 `import` 入口模块，调 `validate_static(ctx)`（**禁止访问网络** —— 仅做静态校验）。失败 → 回滚（drop tables、删注册条目、删 copy）。
+
+</Step>
+</Steps>
+
+## 列出已装
+
+<CopyableCommand command="deeptrade plugin list" />
+
+输出每个插件的 `plugin_id` / 版本 / 类型 / `enabled` 状态。
+
+## 升级
+
+<CopyableCommand command="deeptrade plugin upgrade limit-up-board" />
+
+按 SemVer 比较逻辑：
+
+| 候选版本 vs 已装版本 | 行为 |
+|---|---|
+| 相等 | 退出码 0，输出 `UpgradeNoop`，**不**改文件 |
+| 候选更高 | 仅 apply 未应用的 migrations + 替换文件 |
+| 候选**更低** | **拒绝**（退出码 2）。框架不支持降级，因为 migrations 没有 rollback 语义 |
+
+<Callout type="warn">
+**降级保护**：如果你确实需要回退到旧版本，先 `uninstall` 再 `install --ref <旧 tag>`。这会让你显式面对"老版本可能用旧表结构 / 缺新列"这个事实。
+</Callout>
+
+## 启用 / 禁用
+
+`channel` 类型插件默认装完后就**已启用**。如果想临时关掉某个 channel（比如调试时不想推消息）：
+
+<CopyableCommand command="deeptrade plugin disable stdout-channel" />
+
+恢复：
+
+<CopyableCommand command="deeptrade plugin enable stdout-channel" />
+
+`enabled` 字段在 `plugins` 表里。`strategy` 类型插件没有这个开关概念（它们是**被显式调用**的子命令）。
+
+## 卸载
+
+<CopyableCommand command="deeptrade plugin uninstall limit-up-board" />
+
+默认行为：
+
+- 删除 `~/.deeptrade/plugins/installed/limit-up-board/` 目录
+- 从 `plugins / plugin_tables / plugin_schema_migrations` 注销
+- **保留**插件创建的业务表（数据不删）
+
+如果要**连数据一起清理**：
+
+<CopyableCommand command="deeptrade plugin uninstall limit-up-board --purge" />
+
+`--purge` 会把插件声明的所有表都 drop。
+
+<Callout type="warn">
+`--purge` 不可恢复。如果你想"暂时不用，但保留分析数据"，**不**要带 `--purge`。
+</Callout>
+
+## 下一步
+
+→ [运行策略](/docs/user/run-strategy)
+
+> 关键词：plugin install、upgrade、uninstall、--ref、--purge、-y、注册表、Git URL、本地路径、SemVer、降级、enable、disable、enabled

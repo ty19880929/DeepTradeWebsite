@@ -1,0 +1,20 @@
+{
+  "title": "用户手册",
+  "icon": "BookOpen",
+  "pages": [
+    "index",
+    "---快速上手---",
+    "install",
+    "init",
+    "---全局配置---",
+    "config-tushare",
+    "config-llm",
+    "---插件管理与运行---",
+    "plugin-search",
+    "plugin-install",
+    "run-strategy",
+    "reports",
+    "---通知推送---",
+    "notify"
+  ]
+}

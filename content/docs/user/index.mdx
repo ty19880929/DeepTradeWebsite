@@ -1,0 +1,60 @@
+---
+title: 用户手册
+description: DeepTrade 用户手册总入口 — 从安装、tushare 配置、LLM provider 设置到运行第一个策略
+---
+
+如果你是**使用者**（量化交易研究员、数据分析师、个人投资者），跟着用户手册的章节顺序走一遍，约 30 分钟就能跑出第一份选股报告。
+
+## 你将完成
+
+<Steps>
+<Step>
+
+### 安装框架（5 分钟）
+
+通过 `pipx` 把 `deeptrade-quant` 装到独立 Python 环境，命令名为 `deeptrade`。详见 [安装框架](/docs/user/install)。
+
+</Step>
+<Step>
+
+### 初始化建库（1 分钟）
+
+`deeptrade init` 在 `~/.deeptrade/` 下创建 DuckDB 单文件 + 必要目录。详见 [初始化建库](/docs/user/init)。
+
+</Step>
+<Step>
+
+### 配置 Tushare 与 LLM（5 分钟）
+
+录入 tushare token 与至少一个 OpenAI 兼容 LLM provider（DeepSeek / Qwen / Kimi 任一）。详见 [配置 Tushare](/docs/user/config-tushare)、[配置 LLM](/docs/user/config-llm)。
+
+</Step>
+<Step>
+
+### 安装策略插件（2 分钟）
+
+从官方注册表搜索并安装，例如 `limit-up-board` 或 `volume-anomaly`。详见 [浏览注册表](/docs/user/plugin-search)、[安装插件](/docs/user/plugin-install)。
+
+</Step>
+<Step>
+
+### 跑出第一份报告（10 分钟）
+
+策略子命令通过框架透传执行，结果落到 `~/.deeptrade/reports/<run_id>/`。详见 [运行策略](/docs/user/run-strategy)、[理解报告](/docs/user/reports)。
+
+</Step>
+<Step>
+
+### （可选）配置推送渠道
+
+安装 channel 类型插件（如 `stdout-channel`），让分析结果按渠道分发。详见 [配置推送](/docs/user/notify)。
+
+</Step>
+</Steps>
+
+## 帮助与反馈
+
+- 在 GitHub 提 issue：[ty19880929/DeepTrade/issues](https://github.com/ty19880929/DeepTrade/issues)
+- 插件相关问题：[ty19880929/DeepTradePluginOfficial/issues](https://github.com/ty19880929/DeepTradePluginOfficial/issues)
+
+> 关键词：用户手册、入门、quick-start、新手指南、tushare、LLM、DeepSeek、Qwen、Kimi、量化、A 股选股、打板、成交量异动

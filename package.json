@@ -15,6 +15,7 @@
     "typecheck": "tsc --noEmit",
     "format": "prettier --write \"**/*.{ts,tsx,md,mdx,json,css}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx,md,mdx,json,css}\"",
+    "verify:content": "node scripts/verify-content.mjs",
     "postinstall": "fumadocs-mdx"
   },
   "dependencies": {

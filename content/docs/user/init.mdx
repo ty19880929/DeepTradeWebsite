@@ -1,0 +1,116 @@
+---
+title: 初始化建库
+description: deeptrade init 命令在 ~/.deeptrade/ 下创建 DuckDB 单文件数据库与必要目录，支持交互式配置 tushare token 与 LLM provider
+---
+
+第一次使用框架前，必须跑一次：
+
+<CopyableCommand command="deeptrade init" />
+
+它会做三件事：
+
+<Steps>
+<Step>
+
+### 创建 `~/.deeptrade/` 目录树
+
+```text
+~/.deeptrade/
+├── deeptrade.duckdb      # 单文件 DuckDB（业务数据 + 审计 + secret_store）
+├── logs/                 # 框架与插件日志
+├── reports/              # 策略产出物：reports/<run_id>/...
+└── plugins/
+    ├── installed/        # 已安装插件按 plugin_id/version/ 物理隔离
+    └── cache/            # 注册表缓存 registry-cache.json
+```
+
+</Step>
+<Step>
+
+### 应用 framework migrations
+
+8 张框架审计表写入 `deeptrade.duckdb`：
+
+- `app_config` / `secret_store` — 配置与密钥
+- `schema_migrations` / `plugin_schema_migrations` — 迁移登记
+- `plugins` / `plugin_tables` — 已装插件清单与表所有权
+- `llm_calls` / `tushare_calls` — 按 `plugin_id` 维度的审计
+
+> **业务表**（如 `lub_runs` / `va_anomalies`）由插件自带 migrations，安装时再写入。
+
+</Step>
+<Step>
+
+### 交互式询问（可跳过）
+
+终端会用 `questionary` 提示：
+
+- 是否现在录入 **Tushare Token**（可选；之后可用 `deeptrade config set-tushare`）
+- 是否现在添加一个 **LLM provider**（可选；之后可用 `deeptrade config set-llm`）
+
+可以全部回车跳过，等用到时再单独配置。
+
+</Step>
+</Steps>
+
+## 跳过交互（自动化场景）
+
+在 CI / 容器 / 一次性脚本里：
+
+<CopyableCommand command="deeptrade init --no-prompts" />
+
+`--no-prompts` 跳过所有交互，仅完成目录与建库。非 TTY（无终端）会自动跳过，等价于此 flag。
+
+## 自定义存储路径
+
+默认所有数据在 `~/.deeptrade/`（macOS/Linux）或 `%USERPROFILE%\.deeptrade\`（Windows）。如果要改路径（多用户测试 / 多账户隔离）：
+
+<Tabs items={['macOS / Linux', 'Windows']}>
+<Tab value="macOS / Linux">
+
+```bash
+export DEEPTRADE_HOME="/data/deeptrade"
+deeptrade init
+```
+
+</Tab>
+<Tab value="Windows">
+
+```powershell
+$env:DEEPTRADE_HOME = "D:\deeptrade"
+deeptrade init
+```
+
+</Tab>
+</Tabs>
+
+| 环境变量 | 作用 | 默认值 |
+|---|---|---|
+| `DEEPTRADE_HOME` | 整个数据根目录（含 db、reports、plugins） | `~/.deeptrade` |
+| `DEEPTRADE_DB_PATH` | 仅覆盖 DuckDB 文件路径（其他保持 HOME） | `$DEEPTRADE_HOME/deeptrade.duckdb` |
+
+<Callout type="warn">
+切换 `DEEPTRADE_HOME` 等于切换到一个**完全空白**的环境。已装的插件、已配的 token 都需要重做。
+</Callout>
+
+## 重新初始化
+
+`init` 是**幂等**的——可以多次运行：
+
+- 已存在的目录与表跳过
+- 已应用的 migrations 跳过
+- 仅交互 prompt 会再问一次（如果存在已配置的值，会显示当前并询问是否覆盖）
+
+如果你想**完全重置**，删除 `~/.deeptrade/` 整个目录后重跑 `deeptrade init`。
+
+## 验证
+
+<CopyableCommand command="deeptrade db info" />
+
+会输出 DuckDB 文件路径与表数量。看到 8 张框架表就说明初始化成功。
+
+## 下一步
+
+→ [配置 Tushare Token](/docs/user/config-tushare)
+
+> 关键词：init、初始化、建库、DuckDB、~/.deeptrade、目录结构、DEEPTRADE_HOME、自动化、--no-prompts、CI

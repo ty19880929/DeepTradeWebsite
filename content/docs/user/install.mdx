@@ -1,0 +1,121 @@
+---
+title: 安装框架
+description: 通过 pipx / uv / pip 把 deeptrade-quant 装到独立 Python 环境，CLI 命令名为 deeptrade
+---
+
+DeepTrade 框架以 PyPI 包 **`deeptrade-quant`** 发布，安装后命令名是 **`deeptrade`**。
+
+<Callout type="info">
+框架本身只包含运行时（init / config / plugin / data / db）；**所有策略与推送渠道是独立插件**，要在框架装好后再单独安装（详见 [安装插件](/docs/user/plugin-install)）。
+</Callout>
+
+## 系统要求
+
+- Python ≥ **3.11**
+- 操作系统：Windows / macOS / Linux 均支持
+- 网络：能访问 PyPI、GitHub raw（拉注册表）、你配置的 LLM 厂商 API
+
+## 推荐：pipx（隔离环境）
+
+`pipx` 把 CLI 工具装在独立 Python 环境里，不污染系统 site-packages。
+
+<Tabs items={['macOS / Linux', 'Windows']}>
+<Tab value="macOS / Linux">
+
+<CopyableCommand command="brew install pipx" />
+
+或：
+
+<CopyableCommand command="python3 -m pip install --user pipx && python3 -m pipx ensurepath" />
+
+</Tab>
+<Tab value="Windows">
+
+<CopyableCommand command="python -m pip install --user pipx" />
+
+然后：
+
+<CopyableCommand command="python -m pipx ensurepath" />
+
+重启终端使 PATH 生效。
+
+</Tab>
+</Tabs>
+
+装 pipx 后：
+
+<CopyableCommand command="pipx install deeptrade-quant" />
+
+## 备选 1：uv（极速）
+
+[`uv`](https://docs.astral.sh/uv/) 是 Astral 出品的 Python 包管理器，速度快、内置 tool 安装：
+
+<CopyableCommand command="uv tool install deeptrade-quant" />
+
+## 备选 2：pip 直装
+
+不推荐进系统 Python，但临时尝试或在 venv 里可以：
+
+<CopyableCommand command="python -m pip install deeptrade-quant" />
+
+如果你已经在某个 venv 里：
+
+<CopyableCommand command="pip install deeptrade-quant" />
+
+## 验证安装
+
+<CopyableCommand command="deeptrade --version" />
+
+应当输出当前版本号（v0.2.x）。如果命令找不到，检查 `pipx ensurepath` 后是否重启了终端。
+
+<CopyableCommand command="deeptrade --help" />
+
+会列出 5 个框架命令：`init / config / plugin / data / db`，外加任何已安装的插件名。
+
+## 升级
+
+<Tabs items={['pipx', 'uv', 'pip']}>
+<Tab value="pipx">
+
+<CopyableCommand command="pipx upgrade deeptrade-quant" />
+
+</Tab>
+<Tab value="uv">
+
+<CopyableCommand command="uv tool upgrade deeptrade-quant" />
+
+</Tab>
+<Tab value="pip">
+
+<CopyableCommand command="pip install --upgrade deeptrade-quant" />
+
+</Tab>
+</Tabs>
+
+## 卸载
+
+<Tabs items={['pipx', 'uv', 'pip']}>
+<Tab value="pipx">
+
+<CopyableCommand command="pipx uninstall deeptrade-quant" />
+
+</Tab>
+<Tab value="uv">
+
+<CopyableCommand command="uv tool uninstall deeptrade-quant" />
+
+</Tab>
+<Tab value="pip">
+
+<CopyableCommand command="pip uninstall deeptrade-quant" />
+
+</Tab>
+</Tabs>
+
+<Callout type="warn">
+卸载框架不会清理 `~/.deeptrade/`（你的本地数据库与插件）。如需彻底清理，**手动**删除 `~/.deeptrade/` 目录。
+</Callout>
+
+## 下一步
+
+→ [初始化建库](/docs/user/init)

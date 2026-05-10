@@ -1,0 +1,108 @@
+---
+title: 配置 LLM Provider
+description: 多 OpenAI 兼容 LLM provider 并存（DeepSeek / Qwen / Kimi 等），通过 set-llm / list-llm / test-llm / set-default-llm 管理；JSON mode + Pydantic 强约束
+---
+
+DeepTrade 内置一个 LLM 代理层，支持**多 OpenAI 兼容厂商并存**。常见的 DeepSeek / Qwen / Kimi 都符合规范，配好 `base_url` 与 `api_key` 即可。
+
+<Callout type="info">
+**为什么不直接用 function calling？** 框架对 LLM 调用强约束 **JSON mode + Pydantic 校验**，禁止传 `tools` / function calls。这样把"幻觉"压在结构化输出层而非后处理，跨 provider 行为也更可控。
+</Callout>
+
+## 添加一个 provider
+
+<CopyableCommand command="deeptrade config set-llm" />
+
+交互式依次问：
+
+| 问题 | 示例 | 说明 |
+|---|---|---|
+| Provider 名 | `deepseek` | 你给它起的本地名，后续 `--provider deepseek` 会引用 |
+| Base URL | `https://api.deepseek.com` | OpenAI 兼容 endpoint，**不带尾部 `/v1`** 或带都行（厂商略有差异） |
+| API Key | `sk-...` | 密码方式输入，不回显；存到 OS keyring |
+| Model | `deepseek-chat` | 厂商支持的模型 ID |
+| 设为默认？ | y / n | 仅一个 provider 能 `is_default=true`；后续未指定时用它 |
+
+## 常见厂商参数
+
+<Tabs items={['DeepSeek', 'Qwen (DashScope)', 'Kimi (Moonshot)']}>
+<Tab value="DeepSeek">
+
+| 字段 | 值 |
+|---|---|
+| Base URL | `https://api.deepseek.com` |
+| 推荐模型 | `deepseek-chat` / `deepseek-reasoner` |
+| 注册 | [platform.deepseek.com](https://platform.deepseek.com) |
+
+</Tab>
+<Tab value="Qwen (DashScope)">
+
+| 字段 | 值 |
+|---|---|
+| Base URL | `https://dashscope.aliyuncs.com/compatible-mode/v1` |
+| 推荐模型 | `qwen-plus` / `qwen-turbo` / `qwen-max` |
+| 注册 | [dashscope.aliyun.com](https://dashscope.console.aliyun.com) |
+
+</Tab>
+<Tab value="Kimi (Moonshot)">
+
+| 字段 | 值 |
+|---|---|
+| Base URL | `https://api.moonshot.cn/v1` |
+| 推荐模型 | `moonshot-v1-8k` / `moonshot-v1-32k` |
+| 注册 | [platform.moonshot.cn](https://platform.moonshot.cn) |
+
+</Tab>
+</Tabs>
+
+## 列出所有 provider
+
+<CopyableCommand command="deeptrade config list-llm" />
+
+输出一个 Rich 表格：name / model / base_url，标记 `is_default` 的那条会高亮。
+
+## 测试连通性
+
+<CopyableCommand command="deeptrade config test-llm" />
+
+不带参数时**测全部**已配的 provider；每个发一个 JSON mode echo（要求返回 `{"ok": true}`），输出每个的延迟与 ✔/✘ 状态。
+
+只测某一个：
+
+<CopyableCommand command="deeptrade config test-llm deepseek" />
+
+## 切换默认
+
+<CopyableCommand command="deeptrade config set-default-llm qwen" />
+
+之后所有未显式指定 provider 的策略调用都会走 `qwen`。
+
+## 修改 / 删除
+
+再跑一次 `set-llm`，输入已存在的 name 时会弹出"修改 / 删除"选择。
+
+## API Key 优先级
+
+每个 provider 的 key 都按"环境变量 → keyring → DuckDB"顺序解析。环境变量名约定：
+
+```text
+DEEPTRADE_LLM_<PROVIDER_NAME_UPPER>_API_KEY
+```
+
+例如名为 `deepseek` 的 provider，对应环境变量是 `DEEPTRADE_LLM_DEEPSEEK_API_KEY`。
+
+## 在策略里如何被使用
+
+策略代码里不会直接拼 `OpenAI(...)`，而是调框架的：
+
+```python
+client = ctx.llm.get_client(name="deepseek", plugin_id=ctx.plugin_id, run_id=run_id)
+```
+
+省略 `name` 时拿默认 provider；每次调用都会写一行到 `llm_calls` 审计表，按 `plugin_id` + `run_id` 维度可追。
+
+## 下一步
+
+→ [浏览插件注册表](/docs/user/plugin-search)
+
+> 关键词：LLM、provider、DeepSeek、Qwen、Kimi、Moonshot、OpenAI 兼容、JSON mode、API key、set-llm、list-llm、test-llm、set-default-llm、多模型、base_url

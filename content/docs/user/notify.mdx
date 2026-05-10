@@ -1,0 +1,124 @@
+---
+title: 配置推送渠道
+description: 装 channel 类型插件（如 stdout-channel）后自动启用，多渠道并行；plugin enable/disable 切换状态；通过 deeptrade <channel-id> test 自检
+---
+
+DeepTrade 自身不内置任何 IM 协议——所有"把消息推到具体渠道"的逻辑都是 **`type: channel`** 的插件。
+
+## 启用流程
+
+<Steps>
+<Step>
+
+### 安装一个 channel 插件
+
+最简单的：标准输出 channel（适合调试 / 本地查看）。
+
+<CopyableCommand command="deeptrade plugin install stdout-channel" />
+
+</Step>
+<Step>
+
+### 默认就启用
+
+`channel` 类型插件**装完即启用**。验证：
+
+<CopyableCommand command="deeptrade plugin list" />
+
+会看到 `stdout-channel` 那行 `enabled: true`。
+
+</Step>
+<Step>
+
+### 测试
+
+每个 channel 插件都应该提供一个 `test` 子命令做自检（具体名以插件 `--help` 为准）：
+
+<CopyableCommand command="deeptrade stdout-channel test" />
+
+跑通后你会在终端看到一条样例通知。
+
+</Step>
+</Steps>
+
+## 启用 / 禁用
+
+需要临时关掉某个 channel（例如调试时不想让通知噪音）：
+
+<CopyableCommand command="deeptrade plugin disable stdout-channel" />
+
+恢复：
+
+<CopyableCommand command="deeptrade plugin enable stdout-channel" />
+
+`enabled` 字段在框架的 `plugins` 表里，不在配置文件 —— 这点和 `strategy` 类型插件区别开来。
+
+## 多渠道并存
+
+可以同时安装多个 channel 插件：
+
+```bash
+deeptrade plugin install stdout-channel
+deeptrade plugin install <feishu-channel>      # 假设有 feishu 渠道
+deeptrade plugin install <wechat-channel>      # 假设有微信渠道
+```
+
+策略生成的每条通知会**广播到所有 enabled 的 channel**。每个 channel 的 push 调用都被独立的 try/except 包住——某一个渠道 401 不会阻塞其他渠道发送。
+
+## 工作模型（开发者也建议读）
+
+通知链路（详细设计 §架构）：
+
+```text
+策略 plugin 调 notify(payload)
+    ↓
+AsyncDispatchNotifier （worker thread + bounded queue）
+    ↓
+MultiplexNotifier （per-channel try/except 隔离）
+    ↓
+ChannelPlugin × N （每个 enabled channel 各拉自己的 push）
+```
+
+关键性质：
+
+- **异步**：策略不会被 channel 阻塞；进程退出前框架 join(timeout) 让消息发完
+- **失败隔离**：一个渠道挂掉不影响其他
+- **零成本退化**：没有任何 enabled channel 时返回 `NoopNotifier`，`notify()` 调用瞬间返回
+
+## 策略代码里如何 notify
+
+为开发者快速参考（用户不必关心）：
+
+```python
+from deeptrade import notify, notification_session
+
+# 一次性
+notify(payload)
+
+# 批量上下文
+with notification_session() as session:
+    for stock in candidates:
+        session.notify(make_payload(stock))
+```
+
+`payload` 是 `NotificationPayload`（语义化数据：sections / items / metrics），channel 自己决定怎么渲染成具体协议（飞书 markdown / 微信文本 / Slack block kit 等）。**不要**预渲染成 markdown 再传给 channel。
+
+## 卸载
+
+<CopyableCommand command="deeptrade plugin uninstall stdout-channel" />
+
+卸载会清理插件代码与注册条目；如果该 channel 写过自己的表（例如发送日志表），加 `--purge` 一并清。
+
+## 现在还有哪些 channel？
+
+去注册表看：
+
+<CopyableCommand command="deeptrade plugin search --type channel" />
+
+> 当前 v0.2 阶段官方主要发布 `stdout-channel`，IM 渠道（飞书 / 微信 / Slack 等）按社区贡献节奏滚动加。如果你想自己写一个，参考 [开发者手册](/docs/developer)（M4 完成）。
+
+## 下一步
+
+完成。回到 [用户手册总入口](/docs/user) 或浏览 [官方插件](/plugins)。
+
+> 关键词：通知、推送、channel、stdout-channel、飞书、微信、Slack、enable、disable、notify、NotificationPayload、AsyncDispatchNotifier

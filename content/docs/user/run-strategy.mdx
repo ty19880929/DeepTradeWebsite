@@ -1,0 +1,164 @@
+---
+title: 运行策略
+description: 用 deeptrade <plugin-id> ... 运行已安装策略插件；CLI 透传机制；run_id 概念；常见 stage 划分（screen / analyze / evaluate / stats）；以 volume-anomaly 为例
+---
+
+策略插件装好后，框架会把它注册成一个**顶级 CLI 子命令**：
+
+<CopyableCommand command="deeptrade volume-anomaly --help" />
+
+输出由插件自己渲染（框架不拦截 `--help`）。
+
+## 透传机制
+
+DeepTrade 的"插件命令"不是预定义的子命令，而是**纯透传**：
+
+<Steps>
+<Step>
+
+### 你敲的命令
+
+```bash
+deeptrade volume-anomaly screen --date 20260108 --top 30
+```
+
+</Step>
+<Step>
+
+### 框架拦截 `volume-anomaly` token
+
+发现它不是 `init / config / plugin / data / db`，去 `plugins` 表查到 `plugin_id="volume-anomaly"` 已装且启用。
+
+</Step>
+<Step>
+
+### 把剩下的 argv 原样递给插件
+
+```python
+plugin.dispatch(['screen', '--date', '20260108', '--top', '30'])
+```
+
+</Step>
+<Step>
+
+### 插件内部的 Click 子命令树自己解析
+
+每个策略插件可以自由定义子命令、flag 名、--help 文案。**框架完全不参与解析**。
+
+</Step>
+</Steps>
+
+这意味着同一个框架版本可以承载任意多种 CLI 风格的策略，互不冲突。
+
+## 通用约定（不强制）
+
+虽然 CLI 形态由插件决定，**官方 strategy 类插件**习惯按 stage 划分子命令：
+
+| Stage | 含义 | 典型输入 / 输出 |
+|---|---|---|
+| `screen` | 初筛 | 入：日期 / 行业 / 板块过滤；出：候选股池 |
+| `analyze` | 详分析 | 入：候选股；调 LLM；出：每只股票的分析结果 JSON |
+| `evaluate` | 复盘评分 | 入：N 天前 screen 结果；出：跑分（命中 / 涨幅）|
+| `stats` | 统计聚合 | 入：多个 run；出：胜率、平均涨幅 |
+
+跑某个具体阶段：
+
+```bash
+deeptrade volume-anomaly analyze --run <run_id>
+```
+
+> 实际 flag 以你装的插件版本 `--help` 为准。
+
+## run_id 概念
+
+每次 `screen`（或类似的"启动一次新分析"的子命令）会生成一个 **run_id** —— 通常是时间戳或 UUID 短串，例如 `20260108_152300_a3f`。
+
+run_id 是后续所有产物的"事务 id"：
+
+- **报告产物**：`~/.deeptrade/reports/<run_id>/...`
+- **LLM 审计**：`llm_calls` 表里 `run_id` 列
+- **Tushare 审计**：`tushare_calls` 表里 `run_id` 列
+- **业务表数据**：插件自己的 `*_runs` 表通常用 `run_id` 做主键
+
+**记住一个 run_id，就能定位这次运行的所有数据**。
+
+## 实战：跑一遍 volume-anomaly
+
+> 假设你已经按前面章节装好框架、配好 tushare / LLM、装了 volume-anomaly 插件。
+
+<Steps>
+<Step>
+
+### 初筛
+
+<CopyableCommand command="deeptrade volume-anomaly screen --date 20260108" />
+
+终端输出新 run_id（例如 `20260108_a3f`）和候选股数量。
+
+</Step>
+<Step>
+
+### 详分析
+
+<CopyableCommand command="deeptrade volume-anomaly analyze --run 20260108_a3f" />
+
+调 LLM 对每只股票生成结构化分析。每个 LLM 请求会写到 `llm_calls` 表（含输入 token、输出、延迟、provider）。
+
+</Step>
+<Step>
+
+### 看产物
+
+```text
+~/.deeptrade/reports/20260108_a3f/
+├── candidates.csv
+├── analysis.jsonl
+└── summary.md
+```
+
+具体文件由插件决定，详见 [理解报告](/docs/user/reports)。
+
+</Step>
+<Step>
+
+### N 天后复盘
+
+<CopyableCommand command="deeptrade volume-anomaly evaluate --run 20260108_a3f" />
+
+回看当时筛出的股票后续涨跌，输出命中率。
+
+</Step>
+</Steps>
+
+## 多 LLM provider 切换
+
+策略默认用 `is_default=true` 的 provider。要临时换：
+
+```bash
+deeptrade volume-anomaly analyze --run <id> --llm qwen
+```
+
+> 实际 flag 以插件 `--help` 为准；多数官方插件按 `--llm` / `--provider` 命名。
+
+切换后这一次 run 的所有 `llm_calls` 都会标记 `provider="qwen"`，方便对比效果。
+
+## Stage Profile
+
+某些策略插件支持 **StageProfile** 概念——对不同 stage 用不同 LLM 配置（例如 screen 用 qwen-turbo 求快、analyze 用 deepseek-chat 求准）。这个映射定义在**插件内部**的 manifest，框架本体只提供 LLM 切换底座。
+
+具体配置方式参考你装的插件 README。
+
+## 排查常见错误
+
+| 错误信息 | 可能原因 | 处理 |
+|---|---|---|
+| `Unknown command: volume-anomaly` | 没装、被禁用、安装时回滚 | `deeptrade plugin list` 检查；重装 |
+| `Tushare API error: 40001` | token 无效或额度耗尽 | 重新 `deeptrade config set-tushare` |
+| `LLM call failed: 401` | api_key 错或被 revoke | `deeptrade config test-llm <name>` 自检 |
+| `Migration mismatch` | 升级未完成 | `deeptrade plugin upgrade <id>` |
+
+## 下一步
+
+→ [理解报告产物](/docs/user/reports)
+
+> 关键词：运行策略、CLI 透传、run_id、screen、analyze、evaluate、stats、volume-anomaly、limit-up-board、stage profile、--llm、复盘
