@@ -1,12 +1,94 @@
 ---
 title: 开发者手册
-description: DeepTrade 插件开发者指南 — 架构哲学、第一个插件、CLI 透传、数据隔离、LLM 调用、注册表发布
+description: DeepTrade 插件开发者指南 — 架构、第一个插件、CLI 透传、数据隔离、LLM 调用、Notify API、注册表发布
 ---
 
-> 🚧 开发者手册将在 M4 milestone 完整建设：架构概览、写第一个插件、Manifest 详解、CLI 透传、数据隔离规范、LLM 调用、Notify API、发布流程。
+如果你想给 DeepTrade 写一个**新策略**或**新推送渠道**，本手册带你从架构理解到提交注册表 PR 全流程跑通。
 
-当前可参考资源：
+## 设计哲学一句话
 
-- [GitHub 仓库 README](https://github.com/ty19880929/DeepTrade)
-- [官方插件示例（limit-up-board / volume-anomaly / stdout-channel）](https://github.com/ty19880929/DeepTradePluginOfficial)
-- [插件开发参考实现](https://github.com/ty19880929/DeepTradePluginOfficial/tree/main/plugins)
+> **框架持有运行时与审计；业务全部在插件包里。新增能力 = 新插件，零框架改动。**
+
+这一句话推导出 9 项硬约束：
+
+| # | 约束 | 设计理由 |
+|---|---|---|
+| 1 | 框架不持有业务表 | `tushare_*` / `llm_calls` 是按 `plugin_id` 维度的审计，不是业务数据 |
+| 2 | 插件全部 DDL 走 migrations + sha256 校验 | 防 schema 漂移、可追溯、可 rollback 至插件粒度 |
+| 3 | `llm_tools` 永远 `False`（Literal） | 强制 JSON mode + Pydantic，不允许 function call 形式的间接幻觉 |
+| 4 | `validate_static(ctx)` 不允许联网 | 插件加载阶段自检必须确定性，否则 install pipeline 不可重试 |
+| 5 | CLI 纯透传给 `dispatch(argv)` | 框架不预解析插件子命令，插件 CLI 自由度 = Click 全开 |
+| 6 | SemVer 强约束 | 等价 → no-op；候选低 → 拒绝（无 migration rollback 模型） |
+| 7 | Channel 失败隔离 | 一个推送渠道挂掉不阻塞其他渠道 |
+| 8 | `tables` 仅声明名 + purge 策略，不嵌 DDL | 表所有权可反查，purge 行为可预测 |
+| 9 | Notification payload 语义化 | Channel 自渲染 IM 协议，框架不预渲染 markdown |
+
+## 你将读到
+
+<Steps>
+<Step>
+
+### [架构概览](/docs/developer/architecture)
+
+`click.Group` 透传机制、Plan A 数据隔离、单写 DuckDB、ConfigService 4 层、AsyncDispatchNotifier、保留命令名。
+
+</Step>
+<Step>
+
+### [开发第一个插件](/docs/developer/first-plugin)
+
+最小可运行项目骨架，用本地路径安装做完整回环测试。
+
+</Step>
+<Step>
+
+### [Manifest 全字段](/docs/developer/manifest)
+
+`deeptrade_plugin.yaml` 的 Pydantic schema 详解，每个字段都标注必填/默认/正则。
+
+</Step>
+<Step>
+
+### [CLI 透传与 Click 子命令](/docs/developer/cli-pass-through)
+
+`dispatch(argv: list[str]) -> int` 契约 + Click 子命令实战。
+
+</Step>
+<Step>
+
+### [数据隔离与 migrations](/docs/developer/data-isolation)
+
+migration 文件命名、sha256 计算命令、表所有权反查、purge 行为。
+
+</Step>
+<Step>
+
+### [LLMManager 调用](/docs/developer/llm-access)
+
+`LLMManager.get_client(name=, plugin_id=, run_id=)` 签名 + JSON mode + Pydantic 强约束。
+
+</Step>
+<Step>
+
+### [Notify API](/docs/developer/notify-api)
+
+顶层 `notify` / `notification_session` API + NotificationPayload 结构。
+
+</Step>
+<Step>
+
+### [发布到注册表](/docs/developer/publish)
+
+PyPI 发布 + 提交 `DeepTradePluginOfficial/registry/index.json` PR。
+
+</Step>
+</Steps>
+
+## 你需要的前置知识
+
+- Python 3.11+、Click（或熟悉 argparse / typer）
+- DuckDB SQL 基础（写 migration）
+- Pydantic v2（schema 定义）
+- 一点 Git/GitHub Release 流程
+
+> 关键词：开发者手册、插件开发、SDK、Plugin、ChannelPlugin、deeptrade_plugin.yaml、migrations、sha256、注册表

@@ -1,0 +1,164 @@
+---
+title: 架构概览
+description: 顶层 click.Group 透传、Plan A 数据隔离、ConfigService 4 层优先级、AsyncDispatchNotifier 通知链 — 写插件前必须先理解的运行时模型
+---
+
+写插件前先理解框架的 5 个关键运行时机制。每一个都直接影响你的插件代码该怎么写。
+
+## 1. CLI 入口是 `click.Group`，不是固定命令树
+
+`deeptrade/cli.py` 把顶层 `Group` 写成自定义子类，处理 `deeptrade <token> ...` 时分两条路：
+
+<Steps>
+<Step>
+
+### 已注册的框架命令
+
+`init / config / plugin / data / db` 这 5 个命令名是**保留字**，框架自己处理。插件 `plugin_id` 不可使用这些值（`PluginManager.RESERVED_PLUGIN_IDS` 校验）。
+
+</Step>
+<Step>
+
+### 其他 token
+
+到 `plugins` 表查 `plugin_id` 是否已装且启用。命中 → 框架合成一个 `click.Command`，关键的两条配置：
+
+```python
+ignore_unknown_options=True
+allow_extra_args=True
+help_option_names=[]   # 让 --help 由插件自渲染
+```
+
+然后调用 `plugin.dispatch(list(ctx.args))`，剩下的 argv 完全交给你。
+
+</Step>
+<Step>
+
+### 不命中
+
+报错列出 5 个框架命令名，建议 `deeptrade plugin search` 浏览注册表。
+
+</Step>
+</Steps>
+
+<Callout type="warn">
+**不要**为每个新策略增加一个框架级 `--type` flag 或 `--strategy` flag。**新增能力 = 新插件包**，是项目里反复确认的核心约束。
+</Callout>
+
+## 2. 数据隔离 = "Plan A：物理命名空间 + 单 DuckDB 文件"
+
+所有数据落在 `~/.deeptrade/deeptrade.duckdb` 单文件里，但通过两条规则做物理隔离：
+
+| 表类别 | 例子 | 谁创建 | 谁清理 |
+|---|---|---|---|
+| **框架审计表** | `plugins`、`plugin_tables`、`llm_calls`、`tushare_calls` | 框架 migrations | 框架卸载 |
+| **业务表** | `lub_runs`、`va_anomalies`（你的插件） | 插件自带 migrations | `deeptrade plugin uninstall <id> --purge` |
+
+**业务表的所有权**记录在 `plugin_tables`（插件名 ↔ 表名映射）。`uninstall --purge` 按这个映射 drop。详见 [数据隔离规范](/docs/developer/data-isolation)。
+
+`llm_calls` / `tushare_calls` 每行都有 `plugin_id` 列；框架内部调用用 sentinel `__framework__`。
+
+## 3. DuckDB 单进程单写
+
+`deeptrade/core/db.py::Database` 把唯一的 DuckDB 连接用 `RLock` 包起来。两条硬约束：
+
+1. **lock 必须横跨 `execute` 与 `fetch`**（不允许在同一 statement 中间释放）。Windows native heap 上一直有 0xC0000374 风险。
+2. **没有线程安全契约**——你的插件如果引入后台 worker，所有写操作必须 route 回主线程的 queue。
+
+`transaction()` 是 reentrant 的（深度计数）；只有最外层 `BEGIN/COMMIT/ROLLBACK`。**你不需要也不应该**手动 BEGIN，调 `ctx.db.transaction()` 即可。
+
+## 4. ConfigService 4 层优先级
+
+任何 config 读取都按这个顺序解析：
+
+```text
+环境变量  >  secret_store（OS keyring 或 DuckDB 加密落盘）
+         >  app_config（DuckDB 普通行）
+         >  Pydantic 默认值
+```
+
+**关键路由**：key 是否含敏感前缀（`is_secret_key()`）决定走 `secret_store` 还是 `app_config`。**永远**不会把 secret 写到 `app_config`，反之亦然。
+
+LLM 多 provider 配置：`llm.providers` 是 `app_config` 里的一个 JSON dict；每个 provider 的 `api_key` 单独住在 `secret_store`。
+
+## 5. 通知链路
+
+```text
+策略调 notify(payload)
+    ↓
+AsyncDispatchNotifier  (worker thread + bounded queue)
+    ↓
+MultiplexNotifier      (per-channel try/except 隔离)
+    ↓
+ChannelPlugin × N      (并发 push)
+```
+
+**关键性质**：
+
+- **异步**：策略不会被 channel 阻塞；进程退出前框架 `join(timeout)` 让消息发完
+- **失败隔离**：一个渠道挂掉不影响其他
+- **零成本退化**：没有任何启用的 channel 时返回 `NoopNotifier`，`notify()` 调用瞬间返回
+
+详见 [Notify API](/docs/developer/notify-api)。
+
+## 6. `validate_static` 加载点
+
+`PluginManager.install()` 的关键 7 步（精确顺序很重要）：
+
+<Steps>
+<Step>
+
+### 1. 解析 manifest
+
+读 `deeptrade_plugin.yaml`，校验 `plugin_id` 不是保留字、`api_version` 兼容、`llm_tools=false`。
+
+</Step>
+<Step>
+
+### 2. 校验 migrations sha256
+
+在动 DB 之前。任意一条 checksum 不匹配 → 立刻 fail。
+
+</Step>
+<Step>
+
+### 3. 复制文件
+
+`shutil.copytree` → `~/.deeptrade/plugins/installed/<plugin_id>/<version>/`。
+
+</Step>
+<Step>
+
+### 4. 单事务内 apply migrations
+
+INSERT 到 `plugins / plugin_tables / plugin_schema_migrations`；事务失败 → 删 copy。
+
+</Step>
+<Step>
+
+### 5. 加载 entrypoint
+
+`importlib.import_module`，先 evict 该插件 top package 的缓存模块（处理重装）。
+
+</Step>
+<Step>
+
+### 6. 调 `validate_static(ctx)`
+
+**禁止联网**。能读 ctx.db / ctx.config / 本地文件，不能调外部 API。失败抛异常 → 框架 rollback：drop 表 + 删注册表行 + 删 copy。
+
+</Step>
+<Step>
+
+### 7. 注册到 plugins 表
+
+`enabled=true`（channel）或 `enabled=true`（strategy 默认也 true）。
+
+</Step>
+</Steps>
+
+## 下一步
+
+→ [开发第一个插件](/docs/developer/first-plugin)
+
+> 关键词：架构、click.Group、透传、Plan A、数据隔离、DuckDB、单写、ConfigService、AsyncDispatchNotifier、validate_static、PluginManager

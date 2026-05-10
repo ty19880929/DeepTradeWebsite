@@ -1,0 +1,189 @@
+---
+title: Manifest 全字段详解
+description: deeptrade_plugin.yaml 每个字段的类型、正则、默认值、硬约束 — 基于 PluginMetadata Pydantic schema 的完整参考
+---
+
+`deeptrade_plugin.yaml` 是插件入口契约。所有字段由 `deeptrade.plugins_api.metadata.PluginMetadata` 这个 Pydantic v2 模型校验，任何一项不符 schema 直接让 install fail（不会动 DB 也不会 copy 文件）。
+
+## 完整最小示例
+
+```yaml
+plugin_id: my-plugin
+name: My Plugin
+version: 0.1.0
+type: strategy
+api_version: "1"
+entrypoint: my_plugin.plugin:MyPlugin
+description: 一个示例插件
+
+permissions:
+  llm: false
+  llm_tools: false
+
+migrations:
+  - version: "20260601_001"
+    file: migrations/20260601_001_init.sql
+    checksum: "sha256:abcdef0123...（64 位 hex）"
+
+tables:
+  - name: my_runs
+    description: run 主表
+    purge_on_uninstall: true
+```
+
+## 字段总览
+
+### 顶层字段
+
+| 字段 | 类型 | 必填 | 校验 / 默认 |
+|---|---|---|---|
+| `plugin_id` | string | ✓ | 正则 `^[a-z][a-z0-9-]{2,31}$`；不能是保留字 `init / config / plugin / data` |
+| `name` | string | ✓ | 中文展示名；用于 CLI / 卡片 |
+| `version` | string | ✓ | SemVer（升级比较走 `packaging.version`） |
+| `type` | enum | × | `"strategy"` / `"channel"`，默认 `"strategy"` |
+| `api_version` | string | ✓ | 当前唯一稳定值 `"1"`；不匹配直接 fail |
+| `entrypoint` | string | ✓ | 正则 `^[A-Za-z_][\w\.]*:[A-Za-z_]\w*$`；`module.path:Class` |
+| `description` | string | ✓ | 一句话说明，给注册表与 `plugin info` 显示 |
+| `author` | string | × | 默认 `""` |
+| `permissions` | object | × | 见 [permissions](#permissions) |
+| `migrations` | list | ✓ | **不可为空**（必须至少一条，哪怕只是空 SQL）；见 [migrations](#migrations) |
+| `tables` | list | × | 默认 `[]`；见 [tables](#tables) |
+
+### `permissions`
+
+```yaml
+permissions:
+  llm: false           # 是否调框架 LLM
+  llm_tools: false     # 永远 false（Literal[False]）
+```
+
+| 子字段 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| `llm` | bool | × | 默认 `false`；为 `true` 时框架 inject `LLMManager` 到 ctx |
+| `llm_tools` | `Literal[false]` | × | **硬约束**：永远 `false`。框架不允许 function-call 模式（M3 决策） |
+
+<Callout type="warn">
+`llm_tools: true` 不会"被忽略"——它会让 Pydantic 直接 raise，install 失败。这是为了把"幻觉风险"压到结构化输出层。
+</Callout>
+
+### `migrations`
+
+每条 migration 是一个对象：
+
+```yaml
+migrations:
+  - version: "20260601_001"
+    file: migrations/20260601_001_init.sql
+    checksum: "sha256:..."
+```
+
+| 子字段 | 类型 | 必填 | 校验 |
+|---|---|---|---|
+| `version` | string | ✓ | 格式 `YYYYMMDD_NNN`（自然时序，便于 ORDER BY） |
+| `file` | string | ✓ | 相对插件包根的相对路径 |
+| `checksum` | string | ✓ | 必须以 `"sha256:"` 开头 + 64 位 hex |
+
+<Callout>
+**migrations 不能为空**——即使你的插件不需要建表，也要至少一条 noop migration（例如 `SELECT 1;`）。这是为了让 `apply_core_migrations` 的 `plugin_schema_migrations` 表始终有可追溯的"插件版本"行。
+</Callout>
+
+升级时框架按 `version` 字符串排序后，**只 apply** 还没写入 `plugin_schema_migrations` 的那些（已应用的跳过）。
+
+### `tables`
+
+声明插件**逻辑上拥有的表**——只是名字与清理策略，**不嵌 DDL**（DDL 在 migrations 里）。
+
+```yaml
+tables:
+  - name: my_runs
+    description: run 主表
+    purge_on_uninstall: true
+
+  - name: my_cache
+    description: 临时缓存
+    purge_on_uninstall: true
+```
+
+| 子字段 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| `name` | string | ✓ | DuckDB 表名；推荐 `<plugin_id_short>_*` 前缀防冲突 |
+| `description` | string | × | 给 `plugin info` / 注册表展示 |
+| `purge_on_uninstall` | bool | × | 默认 `true`；`uninstall --purge` 时是否 DROP |
+
+**为什么这样切？**
+- `tables` 仅声明所有权 → 框架建立 `plugin_tables` 反查映射
+- DDL 在 migrations → sha256 锚定，可追溯版本
+- `--purge` 仅 DROP `purge_on_uninstall=true` 的表（你想保留某些表数据时 set false）
+
+## 完整示例：策略插件
+
+参考 [`limit-up-board`](https://github.com/ty19880929/DeepTradePluginOfficial/blob/main/limit_up_board/deeptrade_plugin.yaml)（实际更复杂，多张表 + 多条 migration）。这里给一个简洁版：
+
+```yaml
+plugin_id: simple-momentum
+name: 简单动量策略
+version: 0.1.0
+type: strategy
+api_version: "1"
+entrypoint: simple_momentum.plugin:SimpleMomentum
+description: 30 日动量打分 + LLM 复核
+author: ty19880929
+permissions:
+  llm: true              # 用 LLM
+  llm_tools: false
+migrations:
+  - version: "20260601_001"
+    file: migrations/20260601_001_init.sql
+    checksum: "sha256:abc..."
+  - version: "20260605_001"
+    file: migrations/20260605_001_add_score_dim.sql
+    checksum: "sha256:def..."
+tables:
+  - name: sm_runs
+    description: 每次 screen 一行
+    purge_on_uninstall: true
+  - name: sm_candidates
+    description: 候选股快照
+    purge_on_uninstall: true
+```
+
+## 完整示例：渠道插件
+
+参考 [`stdout-channel`](https://github.com/ty19880929/DeepTradePluginOfficial/blob/main/stdout/deeptrade_plugin.yaml)。Channel 类型基本一致，只是 `type: channel` + 入口实现 `ChannelPlugin` 协议（多一个 `push()` 方法，详见 [Notify API](/docs/developer/notify-api)）。
+
+```yaml
+plugin_id: my-feishu-channel
+name: 飞书 Channel
+version: 0.1.0
+type: channel             # ← 区别仅此
+api_version: "1"
+entrypoint: my_feishu_channel.plugin:FeishuChannel
+description: 把 NotificationPayload 推到飞书机器人
+permissions:
+  llm: false
+  llm_tools: false
+migrations:
+  - version: "20260601_001"
+    file: migrations/20260601_001_init.sql
+    checksum: "sha256:..."
+tables:
+  - name: feishu_send_log
+    description: 推送审计
+    purge_on_uninstall: true
+```
+
+## 升级时的字段语义
+
+| 字段 | 升级时是否可改 | 说明 |
+|---|---|---|
+| `plugin_id` | ✗ | 视为不同插件，需要先 uninstall |
+| `version` | ✓ | 必须比已装高（SemVer 比较） |
+| `migrations` | ✓ 追加 | 只能追加新条目；已应用的不能改 sha256 |
+| `tables` | ✓ | 加表必须配合 migration ALTER；删表行为参见数据隔离规范 |
+| `permissions.llm_tools` | ✗ | 永远 `false` |
+
+## 下一步
+
+→ [CLI 透传与 Click 子命令](/docs/developer/cli-pass-through)
+
+> 关键词：manifest、deeptrade_plugin.yaml、PluginMetadata、Pydantic、schema、字段、validate、permissions、llm_tools、migrations、tables、purge_on_uninstall

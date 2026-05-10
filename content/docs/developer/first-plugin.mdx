@@ -1,0 +1,237 @@
+---
+title: 开发第一个插件
+description: 从空目录到本地路径安装跑通 deeptrade hello-world 完整闭环 — 项目骨架、deeptrade_plugin.yaml、Plugin 类、回环测试
+---
+
+跟着这一篇 ~30 分钟跑通：建项目骨架 → 写 manifest → 实现 Plugin 类 → 本地路径安装回环测试。
+
+## 项目骨架
+
+新建一个 Python 包，按这个结构：
+
+<Files>
+  <Folder name="my-deeptrade-plugin" defaultOpen>
+    <File name="deeptrade_plugin.yaml" />
+    <File name="pyproject.toml" />
+    <Folder name="my_plugin">
+      <File name="__init__.py" />
+      <File name="plugin.py" />
+    </Folder>
+    <Folder name="migrations">
+      <File name="20260601_001_init.sql" />
+    </Folder>
+    <File name="README.md" />
+  </Folder>
+</Files>
+
+## 1. `pyproject.toml`
+
+最小可发布形态（PyPI 友好；本地路径安装也用同一个）：
+
+```toml
+[project]
+name = "my-deeptrade-plugin"
+version = "0.1.0"
+description = "Hello-world plugin for DeepTrade"
+requires-python = ">=3.11"
+dependencies = [
+  "deeptrade-quant>=0.2.0",
+  "click>=8.1",
+  "pydantic>=2.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+```
+
+## 2. `migrations/20260601_001_init.sql`
+
+业务表 DDL 写在这。命名规则 `YYYYMMDD_NNN_<name>.sql`：
+
+```sql
+-- migrations/20260601_001_init.sql
+CREATE TABLE IF NOT EXISTS my_runs (
+  run_id     VARCHAR PRIMARY KEY,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  message    VARCHAR NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_my_runs_created
+  ON my_runs (created_at);
+```
+
+<Callout type="warn">
+**所有 DDL 必须经 migrations**，**不要**在 Python 代码里 `db.execute("CREATE TABLE ...")`。这是项目 S1 硬约束（详见 [数据隔离规范](/docs/developer/data-isolation)）。
+</Callout>
+
+算 sha256 让 manifest 引用：
+
+<Tabs items={['macOS / Linux', 'Windows PowerShell']}>
+<Tab value="macOS / Linux">
+
+<CopyableCommand command="sha256sum migrations/20260601_001_init.sql" />
+
+</Tab>
+<Tab value="Windows PowerShell">
+
+<CopyableCommand command="Get-FileHash migrations/20260601_001_init.sql -Algorithm SHA256" />
+
+</Tab>
+</Tabs>
+
+记下输出的 64 位 hex。
+
+## 3. `deeptrade_plugin.yaml`
+
+这是框架 install 时校验的入口；任意字段不符 schema 都直接 fail：
+
+```yaml
+plugin_id: my-plugin             # ^[a-z][a-z0-9-]{2,31}$；不能是 init/config/plugin/data
+name: My Hello-World Plugin
+version: 0.1.0
+type: strategy                   # 或 channel
+api_version: "1"                 # 当前 SDK 唯一稳定版
+entrypoint: my_plugin.plugin:MyPlugin
+description: 一个 hello-world 演示插件
+author: Your Name
+
+permissions:
+  llm: false                     # 不需要 LLM 调用
+  llm_tools: false               # 永远 false（Literal 硬约束）
+
+migrations:
+  - version: "20260601_001"
+    file: migrations/20260601_001_init.sql
+    checksum: "sha256:把上一步的 64 位 hex 贴这里"
+
+tables:
+  - name: my_runs
+    description: 演示用的 run 主表
+    purge_on_uninstall: true     # uninstall --purge 时 drop
+```
+
+完整字段说明见 [Manifest 全字段](/docs/developer/manifest)。
+
+## 4. `my_plugin/plugin.py`
+
+实现 `Plugin` Protocol。最小骨架：
+
+```python
+from __future__ import annotations
+
+import click
+from deeptrade.plugins_api import (
+    Plugin,
+    PluginContext,
+    PluginMetadata,
+)
+
+
+class MyPlugin:
+    """Hello-world DeepTrade plugin."""
+
+    metadata: PluginMetadata  # 框架在 install 时 inject
+
+    def __init__(self) -> None:
+        # PluginManager 调 __init__ 后会赋值 self.metadata
+        pass
+
+    def validate_static(self, ctx: PluginContext) -> None:
+        """install 末尾自检；MUST NOT touch 网络。
+
+        允许：读本地文件、查 ctx.db、读 ctx.config
+        禁止：HTTP 请求、socket、subprocess 联网
+        失败 → raise → 框架 rollback。
+        """
+        # 这里举一个示例：确认表已建
+        rows = ctx.db.fetch("SELECT name FROM plugin_tables WHERE plugin_id = ?", [ctx.plugin_id])
+        owned = {r[0] for r in rows}
+        if "my_runs" not in owned:
+            raise RuntimeError("my_runs 表丢失——manifest tables 与 migration 不一致？")
+
+    def dispatch(self, argv: list[str]) -> int:
+        """框架透传过来的 CLI argv，由插件自己解析；返回值是 process exit code。"""
+        # 用 Click 简单包一层
+        cli.main(args=argv, standalone_mode=False)
+        return 0
+
+
+@click.group()
+def cli() -> None:
+    """`deeptrade my-plugin <subcommand>`"""
+
+
+@cli.command()
+@click.option("--name", default="world", help="名字")
+def hello(name: str) -> None:
+    """打个招呼并写一条记录。"""
+    click.echo(f"Hello, {name}!")
+```
+
+<Callout>
+`Plugin` 是 Protocol（structural typing），不是抽象基类——你**不需要** `class MyPlugin(Plugin):`，只要满足 3 个属性 / 方法（`metadata` / `validate_static` / `dispatch`）即可。
+</Callout>
+
+## 5. 本地路径安装回环测试
+
+<Steps>
+<Step>
+
+### 装到本地的 DeepTrade 环境
+
+<CopyableCommand command="deeptrade plugin install ./my-deeptrade-plugin/" />
+
+框架会：
+1. 解析 manifest
+2. 校验 sha256
+3. copy 到 `~/.deeptrade/plugins/installed/my-plugin/0.1.0/`
+4. apply migration（建 `my_runs` 表 + 索引）
+5. import + 调 `validate_static`
+6. 注册到 `plugins` 表
+
+</Step>
+<Step>
+
+### 跑透传命令
+
+<CopyableCommand command="deeptrade my-plugin hello --name DeepTrade" />
+
+应输出 `Hello, DeepTrade!`。
+
+</Step>
+<Step>
+
+### 看插件信息
+
+<CopyableCommand command="deeptrade plugin info my-plugin" />
+
+应展示完整 manifest 内容。
+
+</Step>
+<Step>
+
+### 卸载（清理数据 + 代码）
+
+<CopyableCommand command="deeptrade plugin uninstall my-plugin --purge" />
+
+`--purge` 会 drop `my_runs`（manifest 标记 `purge_on_uninstall: true`）。
+
+</Step>
+</Steps>
+
+## 常见问题
+
+| 问题 | 排查 |
+|---|---|
+| `Reserved plugin_id` | manifest 的 `plugin_id` 与 `init/config/plugin/data` 冲突 |
+| `Migration checksum mismatch` | sha256 写错 / migration 文件改了忘改 checksum |
+| `entrypoint regex failed` | `entrypoint` 必须是 `module.path:ClassName` 形式 |
+| `validate_static raised` | 你的 validate_static 抛异常；框架已自动 rollback |
+| 透传时找不到命令 | `deeptrade plugin list` 看 `enabled=true`；可能 install 时 rollback 了 |
+
+## 下一步
+
+→ [Manifest 全字段详解](/docs/developer/manifest)
+
+> 关键词：第一个插件、hello-world、骨架、pyproject、deeptrade_plugin.yaml、本地路径安装、本地路径、回环测试、my-plugin

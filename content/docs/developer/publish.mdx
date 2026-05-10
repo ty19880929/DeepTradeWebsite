@@ -1,0 +1,288 @@
+---
+title: 发布到注册表
+description: 从开发完成到提交 DeepTradePluginOfficial PR 全流程 — PyPI / GitHub Release / tag_prefix / min_framework_version / 注册表 entry 字段填写
+---
+
+把你的插件让其他用户用一行 `deeptrade plugin install <你的插件名>` 装上的标准流程。
+
+## 大体路径
+
+<Steps>
+<Step>
+
+### 1. 本地回环测试通过
+
+`deeptrade plugin install ./my-plugin/` 装得上、`uninstall --purge` 清得干净。
+
+</Step>
+<Step>
+
+### 2. 推到一个公开的 GitHub 仓库
+
+主仓最稳的做法是**用 DeepTradePluginOfficial monorepo**（详见下文），但你也可以用自己的仓库。
+
+</Step>
+<Step>
+
+### 3. 打 release tag
+
+格式：`<tag_prefix>v<X.Y.Z>`，例如 `simple-momentum/v0.1.0`。
+
+</Step>
+<Step>
+
+### 4. （可选）发布 PyPI
+
+如果你想用户用 `pip install` 也能装到 site-packages，把 wheel 推到 PyPI。框架 install 流程不依赖 PyPI（走 git clone tag）。
+
+</Step>
+<Step>
+
+### 5. 提交 PR 到 DeepTradePluginOfficial
+
+往 `registry/index.json` 加一条 entry。merge 后：网站重建（cron 触发）→ 用户 `deeptrade plugin search` 能看到。
+
+</Step>
+</Steps>
+
+## 1. 仓库布局选择
+
+### 选项 A：贡献到 DeepTradePluginOfficial monorepo（推荐）
+
+直接 fork [`ty19880929/DeepTradePluginOfficial`](https://github.com/ty19880929/DeepTradePluginOfficial)，在 `<plugin_id_short>/` 下加你的插件子目录：
+
+```text
+DeepTradePluginOfficial/
+├── limit_up_board/
+├── volume_anomaly/
+├── stdout/
+└── simple_momentum/      ← 你的新插件
+    ├── deeptrade_plugin.yaml
+    ├── pyproject.toml
+    ├── simple_momentum/
+    └── migrations/
+```
+
+**优点**：
+- 注册表 entry 的 `repo` 与 `subdir` 直接对齐
+- 维护者批量验证一致性更容易
+- 享受 monorepo 的 CI 复用
+
+### 选项 B：自有仓库
+
+```text
+github.com/<your_user>/my-deeptrade-plugin
+└── deeptrade_plugin.yaml （在仓库根）
+```
+
+注册表 entry 的 `repo: your_user/my-deeptrade-plugin`、`subdir: ""`（或 `"."`）。**仓库必须公开**——框架 git clone 时不带 token，私有仓拉不到。
+
+## 2. tag_prefix 规则
+
+### 单仓库
+
+仓库里只有一个插件：
+
+```text
+tag: v0.1.0
+tag_prefix: ""              # 或省略
+```
+
+### Monorepo
+
+仓库里有多个插件，用前缀避免 tag 冲突：
+
+```text
+limit-up-board/v0.6.1       ← tag_prefix: "limit-up-board/"
+volume-anomaly/v0.5.0       ← tag_prefix: "volume-anomaly/"
+stdout-channel/v0.1.0       ← tag_prefix: "stdout-channel/"
+```
+
+框架 `deeptrade plugin upgrade <id>` 列 release 时，按 `tag.startswith(tag_prefix)` 过滤后取最高 SemVer。
+
+<Callout type="warn">
+**`tag_prefix` 一旦发布到注册表就不能改**——已经装了你插件的所有用户的 `deeptrade plugin upgrade` 都依赖原前缀去找 release。如果必须改格式，建议同时支持新旧前缀（旧 tag 保留），或发新 plugin_id。
+</Callout>
+
+## 3. min_framework_version
+
+声明你的插件依赖的框架最低版本：
+
+```yaml
+# 注册表 entry
+min_framework_version: "0.2.0"
+```
+
+框架的 `SourceResolver`（`plugin_source.py`）在 install 前比对 `deeptrade-quant` wheel 版本，低于这个值直接拒绝（不下载、不解压）。
+
+**怎么定？**
+- 你最新使用的 `deeptrade-quant` 版本（开发时跑通的那个）
+- **不要**写 `"0.0.0"` 或最早版本——后续如果你用了新 SDK 字段，老用户装上会运行时挂
+
+## 4. 注册表 entry 完整字段
+
+```json
+{
+  "schema_version": 1,
+  "plugins": {
+    "simple-momentum": {
+      "name": "简单动量策略",
+      "type": "strategy",
+      "description": "30 日动量打分 + LLM 复核（演示用）",
+      "repo": "ty19880929/DeepTradePluginOfficial",
+      "subdir": "simple_momentum",
+      "tag_prefix": "simple-momentum/",
+      "min_framework_version": "0.2.0"
+    }
+  }
+}
+```
+
+| 字段 | 校验（在网站构建期 Zod 严格校验） |
+|---|---|
+| `name` | 中文展示名，1+ 字符 |
+| `type` | `"strategy"` 或 `"channel"`，其他值让构建立刻 fail |
+| `description` | 一句话，60-100 字最好；卡片墙直接显示 |
+| `repo` | `<user>/<repo>` 形式 |
+| `subdir` | 仓库内子目录；根目录用 `""` |
+| `tag_prefix` | 见上；空字符串等价于"无前缀" |
+| `min_framework_version` | SemVer |
+
+## 5. PR 流程
+
+<Steps>
+<Step>
+
+### Fork 与本地分支
+
+```bash
+gh repo fork ty19880929/DeepTradePluginOfficial --clone
+cd DeepTradePluginOfficial
+git checkout -b register/simple-momentum
+```
+
+</Step>
+<Step>
+
+### 加你的代码 + 注册表条目
+
+如果走 monorepo，把你的 plugin 子目录提交到 `<plugin_id_short>/`。**同时**编辑 `registry/index.json`：
+
+```diff
+ {
+   "schema_version": 1,
+   "plugins": {
+     "limit-up-board": { ... },
+     "volume-anomaly": { ... },
+     "stdout-channel": { ... },
++    "simple-momentum": {
++      "name": "简单动量策略",
++      "type": "strategy",
++      "description": "...",
++      "repo": "ty19880929/DeepTradePluginOfficial",
++      "subdir": "simple_momentum",
++      "tag_prefix": "simple-momentum/",
++      "min_framework_version": "0.2.0"
++    }
+   }
+ }
+```
+
+</Step>
+<Step>
+
+### 打 release tag（在你的 fork 里测）
+
+先在 fork 里推一个 tag 验证 `deeptrade plugin install` 能工作：
+
+```bash
+git tag simple-momentum/v0.1.0
+git push origin simple-momentum/v0.1.0
+```
+
+然后在另一台机器：
+
+```bash
+deeptrade plugin install https://github.com/<your_fork>/DeepTradePluginOfficial.git \
+  --ref simple-momentum/v0.1.0
+```
+
+</Step>
+<Step>
+
+### 开 PR
+
+```bash
+gh pr create \
+  --title "register: simple-momentum v0.1.0" \
+  --body "..."
+```
+
+PR 描述里**至少包含**：
+
+- 插件功能一句话总结
+- 你已用的 `deeptrade-quant` 版本
+- 一段使用示例（从 install 到产出报告）
+- 列出业务表名 + 是否 `purge_on_uninstall`
+
+</Step>
+<Step>
+
+### Merge 后
+
+`DeepTradeWebsite` 仓库 `.github/workflows/registry-sync.yml` 每 6 小时 cron 触发 Vercel deploy hook，重建网站。所以**最长 6 小时后**用户在 `https://deeptrade.tiey.ai/plugins` 能看到你的卡片。
+
+如果你急着展示，可以在 `DeepTradeWebsite` 仓 Actions 里手动 dispatch `registry-sync` workflow，立刻触发重建。
+
+</Step>
+</Steps>
+
+## 6. 发布前自检清单
+
+- [ ] `deeptrade_plugin.yaml` 全字段符合 Pydantic schema（先本地装一次确认）
+- [ ] 所有 migration 的 sha256 准确（改过 SQL 文件就要重算）
+- [ ] `permissions.llm_tools` = `false`
+- [ ] 业务表都用 `<plugin_id_short>_*` 前缀防冲突
+- [ ] `validate_static` 不联网
+- [ ] `dispatch` 在 `--help` / `--version` / 无参时都能合理返回（exit 0 / 2 / ...）
+- [ ] `python -c "from <your_module>.plugin import <YourPlugin>; print(<YourPlugin>().metadata)"` 能跑通
+- [ ] 至少在 macOS / Linux / Windows 三种 OS 之一上做了端到端测试
+- [ ] PyPI 发布（如有）：`pip install <pkg>` 能装到 site-packages 且 import 不报错
+
+## 7. 升级与回滚
+
+### 升级你的插件
+
+```bash
+git tag simple-momentum/v0.2.0       # 提高版本号
+git push --tags
+```
+
+用户跑 `deeptrade plugin upgrade simple-momentum`，框架按 SemVer 比对：
+
+| 候选版本 vs 已装版本 | 行为 |
+|---|---|
+| 相等 | exit 0 + `UpgradeNoop`，不动文件 |
+| 候选高 | 应用未应用的 migration + 替换文件 |
+| 候选低 | exit 2 + 拒绝（**禁止降级**） |
+
+### Schema 破坏性变更
+
+如果新版本要 drop / rename 列：
+
+- **不要**降级路径（框架不支持 migration rollback）
+- 在 PR 描述与 CHANGELOG 标记 `breaking change`
+- 旧用户须先 `deeptrade plugin uninstall <id> --purge` 再装新版
+
+### 紧急回滚
+
+如果 v0.2.0 有严重 bug，**不要**直接发 v0.1.x（被 SemVer 拒绝）：
+
+- 发 v0.2.1 修复
+- 在注册表 PR 里提示用户
+
+## 完成
+
+→ 回到 [开发者手册总入口](/docs/developer)
+
+> 关键词：发布、发布流程、注册表、PR、registry、DeepTradePluginOfficial、tag_prefix、min_framework_version、SemVer、PyPI、GitHub Release、monorepo、fork

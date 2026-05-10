@@ -1,0 +1,231 @@
+---
+title: 调用框架 LLM
+description: "LLMManager.get_client 签名 + JSON mode + Pydantic 强约束 + StageProfile 单 LLM 调用调优 + llm_calls 自动审计"
+---
+
+DeepTrade 提供统一的 LLM 调用层，内置：
+
+- 多 OpenAI 兼容 provider 路由（DeepSeek / Qwen / Kimi 等）
+- **强约束 JSON mode + Pydantic 校验**（拒绝 function call / 拒绝纯文本输出）
+- 自动写 `llm_calls` 审计表，按 `plugin_id` + `run_id` 维度可追
+
+本章讲插件作者怎么正确接入。
+
+## 核心 API
+
+```python
+from deeptrade.core.llm import LLMManager
+from deeptrade.plugins_api import PluginContext
+
+def my_analyze(ctx: PluginContext, run_id: str) -> None:
+    # 1. 拿 client（透传给 OpenAI SDK 兼容接口）
+    client = ctx.llm.get_client(
+        name="deepseek",        # 省略则用 is_default=true 的 provider
+        plugin_id=ctx.plugin_id, # 必填，进 llm_calls 审计
+        run_id=run_id,           # 必填，关联本次 run
+    )
+
+    # 2. 直接用 OpenAI SDK 形态调
+    response = client.chat.completions.create(
+        model=client.model,             # provider 默认模型
+        response_format={"type": "json_object"},  # 强制 JSON
+        messages=[
+            {"role": "system", "content": "..."},
+            {"role": "user", "content": "..."},
+        ],
+    )
+```
+
+`ctx.llm` 由框架在加载插件时注入到 `PluginContext`（仅当 manifest `permissions.llm: true`）。
+
+## 三个硬约束
+
+### 1. 不要传 `tools` / function_call
+
+```python
+# ✗ 不允许
+client.chat.completions.create(
+    tools=[...],         # ← Pydantic 在 transport 层拦截
+    tool_choice="auto",
+)
+
+# ✓ 用 JSON mode + Pydantic
+client.chat.completions.create(
+    response_format={"type": "json_object"},
+    messages=[...],
+)
+```
+
+为什么？跨 provider function-call 行为不一致（DeepSeek 与 Qwen 的 tool schema 序列化差异、Kimi 部分模型不支持），且本质上是结构化输出的间接表达。框架直接禁用，让你写 `response_format=json_object` + Pydantic schema。
+
+### 2. 用 Pydantic 解析输出
+
+```python
+from pydantic import BaseModel, Field
+
+class AnalysisResult(BaseModel):
+    confidence: float = Field(ge=0, le=1)
+    reasoning: str
+    risks: list[str] = Field(default_factory=list)
+
+raw = response.choices[0].message.content
+parsed = AnalysisResult.model_validate_json(raw)  # 解析 + 校验一步到位
+```
+
+`model_validate_json` 抛 `ValidationError` 时，建议**重试 1-2 次再放弃**，并把失败的 raw response 落到本地 audit 文件方便调试。
+
+### 3. 必填 `plugin_id` 与 `run_id`
+
+```python
+client = ctx.llm.get_client(
+    name="qwen",
+    plugin_id=ctx.plugin_id,   # 字符串；框架内部用 sentinel '__framework__'
+    run_id=run_id,              # 你自己生成（推荐时间戳 + 短 hash）
+)
+```
+
+每次 chat completion 自动 INSERT 一行到 `llm_calls`：
+
+```text
+created_at | plugin_id    | run_id        | provider  | model         | prompt_tokens | completion_tokens | latency_ms | request_id
+2026-05-08 | volume-anomaly | 20260508_a3f | deepseek | deepseek-chat | 4321          | 850               | 2814       | chatcmpl-...
+```
+
+用户可以查这张表追溯成本与延迟（详见用户手册的 [理解报告](/docs/user/reports)）。
+
+## 多 provider 路由
+
+`LLMManager` 在初始化时从 `app_config.llm.providers` 读取所有已配置的 provider：
+
+```python
+# 用默认（is_default=true）
+client = ctx.llm.get_client(plugin_id=..., run_id=...)
+
+# 显式指定
+client = ctx.llm.get_client(name="deepseek", plugin_id=..., run_id=...)
+
+# 列出全部
+provider_names = ctx.llm.list_providers()  # ['qwen', 'deepseek']
+```
+
+未配置的 provider name 抛 `LLMProviderNotFound`。`is_default` provider 是 `set-default-llm` 命令切的（详见用户手册 [配置 LLM Provider](/docs/user/config-llm)）。
+
+## StageProfile：单 LLM 调用调优
+
+很多策略包含**多个阶段**，每个阶段对 LLM 的需求不同：
+
+| Stage | 特点 | 想要的 provider/参数 |
+|---|---|---|
+| screen | 大批量轻判断 | qwen-turbo + temperature 0.7 + 短输出 |
+| analyze | 单只深分析 | deepseek-chat + temperature 0.2 + 长输出 |
+| evaluate | 复盘评分 | qwen-plus + JSON 严格 |
+
+`StageProfile` 让你为每个 stage 注册一组**默认参数**：
+
+```python
+from deeptrade.plugins_api import StageProfile
+
+PROFILES = {
+    "screen": StageProfile(
+        provider="qwen",
+        model_override=None,    # None = 用 provider 默认 model
+        temperature=0.7,
+        max_tokens=600,
+    ),
+    "analyze": StageProfile(
+        provider="deepseek",
+        model_override="deepseek-chat",
+        temperature=0.2,
+        max_tokens=4096,
+    ),
+}
+
+def run_screen(ctx, run_id):
+    profile = PROFILES["screen"]
+    client = ctx.llm.get_client(
+        name=profile.provider,
+        plugin_id=ctx.plugin_id,
+        run_id=run_id,
+    )
+    resp = client.chat.completions.create(
+        model=profile.model_override or client.model,
+        temperature=profile.temperature,
+        max_tokens=profile.max_tokens,
+        response_format={"type": "json_object"},
+        messages=[...],
+    )
+```
+
+<Callout>
+**StageProfile 是插件内部的概念**，框架不强制 stage→profile 映射。这是 v0.7 的明确决策（已记录在 user feedback memory）：让插件作者按业务需要自由组织。
+</Callout>
+
+## 错误处理
+
+| 异常 | 来源 | 推荐处理 |
+|---|---|---|
+| `LLMProviderNotFound` | name 在 `llm.providers` 找不到 | 给用户提示去跑 `deeptrade config set-llm` |
+| OpenAI `RateLimitError` | provider 限频 | 退避重试（推荐 1s/3s/10s 三次） |
+| OpenAI `APIConnectionError` | 网络 | 同上 |
+| `pydantic.ValidationError` | LLM 输出不符 schema | 重试 1-2 次后落 audit 文件，跳过该候选 |
+| `openai.AuthenticationError` | api_key 失效 | fail fast，提示 `deeptrade config test-llm <name>` |
+
+## 成本预算建议
+
+写策略时估一下每次 run 的 LLM 调用规模：
+
+| 阶段 | 单次 token | run 内调用次数 | 单 run 总 token |
+|---|---|---|---|
+| screen | 1k 输入 + 200 输出 | 1（汇总判定） | 1.2k |
+| analyze | 4k 输入 + 1k 输出 | 30 候选 | 150k |
+| evaluate | 2k 输入 + 500 输出 | 30 候选 | 75k |
+
+DeepSeek/Qwen 主流模型在 200k 输入 token 范围内都很便宜（每 run < 1 元）。
+
+## 完整示例：volume-anomaly 风格的 analyze
+
+```python
+from pydantic import BaseModel, Field
+from deeptrade.plugins_api import PluginContext
+
+class AnalysisOutput(BaseModel):
+    ts_code: str
+    launch_score: int = Field(ge=0, le=100)
+    reasoning: str
+    risks: list[str]
+
+def analyze_one(ctx: PluginContext, run_id: str, ts_code: str, market_data: dict) -> AnalysisOutput:
+    client = ctx.llm.get_client(
+        name="deepseek",
+        plugin_id=ctx.plugin_id,
+        run_id=run_id,
+    )
+
+    system_prompt = "你是 A 股量化策略分析师……（约 800 字）"
+    user_prompt = f"分析 {ts_code} 的启动概率：\n\n{market_data!r}"
+
+    for attempt in range(2):
+        try:
+            resp = client.chat.completions.create(
+                model=client.model,
+                response_format={"type": "json_object"},
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+                temperature=0.2,
+            )
+            return AnalysisOutput.model_validate_json(resp.choices[0].message.content)
+        except (json.JSONDecodeError, ValidationError) as e:
+            if attempt == 1:
+                raise
+            # 第一次失败，重试
+            user_prompt += "\n\n严格按 JSON schema 输出，不要 markdown 包裹。"
+    raise RuntimeError("unreachable")
+```
+
+## 下一步
+
+→ [Notify API](/docs/developer/notify-api)
+
+> 关键词：LLM、LLMManager、get_client、JSON mode、Pydantic、StageProfile、provider、deepseek、qwen、kimi、llm_calls、审计、成本

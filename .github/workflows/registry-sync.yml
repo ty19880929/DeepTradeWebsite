@@ -1,0 +1,44 @@
+name: Registry Sync
+
+# 每 6 小时把 DeepTradePluginOfficial/registry/index.json 与
+# DeepTrade/CHANGELOG.md 的最新版本同步到网站，方法是触发 Vercel 重建。
+#
+# 不直接 commit 任何东西到本仓——重建期间网站会现 fetch 一遍最新 registry
+# 与 CHANGELOG（带 fallback 兜底）。这条 workflow 只负责"通知 Vercel 该
+# 重建了"。
+#
+# 配置：
+#   1. 在 Vercel 项目 → Settings → Git → Deploy Hooks 创建 hook（branch=main）
+#   2. 把 hook URL 写入 GitHub Actions secret `VERCEL_DEPLOY_HOOK_URL`
+
+on:
+  schedule:
+    # cron 每 6 小时（UTC）触发
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+    # 也支持手动触发：Actions → Registry Sync → Run workflow
+
+jobs:
+  trigger-vercel-rebuild:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify deploy hook secret exists
+        env:
+          HOOK_URL: ${{ secrets.VERCEL_DEPLOY_HOOK_URL }}
+        run: |
+          if [ -z "$HOOK_URL" ]; then
+            echo "::error::VERCEL_DEPLOY_HOOK_URL secret 未配置；前往 GitHub repo Settings → Secrets and variables → Actions 添加" >&2
+            exit 1
+          fi
+
+      - name: Trigger Vercel deploy hook
+        env:
+          HOOK_URL: ${{ secrets.VERCEL_DEPLOY_HOOK_URL }}
+        run: |
+          response=$(curl -sS -X POST "$HOOK_URL" -w "\nHTTP_CODE:%{http_code}\n")
+          echo "$response"
+          code=$(echo "$response" | grep '^HTTP_CODE:' | cut -d: -f2)
+          if [ "$code" != "200" ] && [ "$code" != "201" ]; then
+            echo "::error::Deploy hook returned HTTP $code" >&2
+            exit 1
+          fi

@@ -1,0 +1,230 @@
+---
+title: 数据隔离与 Migrations
+description: DDL 只能走 migrations + sha256 校验 — 表所有权、命名约定、purge 行为、ALTER 升级路径详解
+---
+
+DeepTrade 用单文件 DuckDB 存所有数据，但通过两条规则做物理隔离：
+
+1. **表所有权** — `plugin_tables` 表登记每张业务表归哪个插件
+2. **DDL only via migrations + sha256** — 不允许在 Python 代码里 `db.execute("CREATE TABLE ...")`
+
+本章讲怎么写 migration、怎么算 sha256、怎么处理升级与卸载的边界。
+
+## 为什么是这套约束（S1）
+
+设计文档 §架构 把这条列为框架级 invariant，不是建议：
+
+| 反模式 | 后果 |
+|---|---|
+| 在 `validate_static` 里 `CREATE TABLE` | 多次安装/重装行为不可预测；卸载时框架不知道该 DROP 啥 |
+| 直接 `ALTER TABLE` 修改业务 schema | 没有 sha256 锚点，跨版本回放不可重现 |
+| 跨插件读写其他插件的表 | 升级 / 卸载时副作用扩散，难以测试 |
+
+强制走 migrations 让 `plugin_schema_migrations` 表成为"插件 schema 当前版本"的唯一真相。
+
+## Migration 文件规范
+
+```text
+my-plugin/
+└── migrations/
+    ├── 20260601_001_init.sql           # 初始建表
+    ├── 20260605_001_add_index.sql      # 加索引
+    └── 20260710_001_add_score_dim.sql  # 加列
+```
+
+### 命名
+
+```text
+<YYYYMMDD>_<NNN>_<short_name>.sql
+```
+
+- `YYYYMMDD` 当地日期（不强制时区一致，但跨贡献者尽量统一）
+- `NNN` 当日序号（`001` / `002` ...）
+- `short_name` snake_case 简短描述
+
+`PluginMetadata.migrations[].version` 写前两段，用下划线连接：
+
+```yaml
+migrations:
+  - version: "20260601_001"
+    file: migrations/20260601_001_init.sql
+    checksum: "sha256:..."
+```
+
+### SQL 内容
+
+只用 DuckDB 兼容的 SQL；推荐 `CREATE TABLE IF NOT EXISTS`、`CREATE INDEX IF NOT EXISTS` 让 migration 成为幂等的（再 apply 一次也不挂）。
+
+```sql
+-- migrations/20260601_001_init.sql
+
+CREATE TABLE IF NOT EXISTS sm_runs (
+  run_id      VARCHAR PRIMARY KEY,
+  created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  config_json VARCHAR NOT NULL          -- 序列化的运行参数
+);
+
+CREATE TABLE IF NOT EXISTS sm_candidates (
+  run_id      VARCHAR NOT NULL,
+  ts_code     VARCHAR NOT NULL,
+  score       DOUBLE,
+  PRIMARY KEY (run_id, ts_code),
+  FOREIGN KEY (run_id) REFERENCES sm_runs (run_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_sm_candidates_score
+  ON sm_candidates (score DESC);
+```
+
+<Callout type="warn">
+**不要**在 migration 里写 `INSERT INTO` 业务种子数据。migration 是 schema only。配置/默认值通过 `validate_static` 在运行时按需填充。
+</Callout>
+
+### sha256 的精确计算
+
+框架的校验逻辑（`plugin_manager.py` 行 105 附近）：
+
+```python
+import hashlib
+sql_text = open("migrations/20260601_001_init.sql", "rb").read().decode("utf-8")
+expected = "sha256:" + hashlib.sha256(sql_text.encode("utf-8")).hexdigest()
+```
+
+**注意**：先 read bytes、再 decode 成 utf-8、再重新 encode utf-8。这意味着 BOM / CRLF 都会影响哈希。建议你的编辑器统一 LF + 无 BOM。
+
+命令行算：
+
+<Tabs items={['macOS / Linux', 'Windows PowerShell', 'Python (跨平台)']}>
+<Tab value="macOS / Linux">
+
+<CopyableCommand command="sha256sum migrations/20260601_001_init.sql" />
+
+输出第一列就是 64 位 hex，前面加 `sha256:` 贴到 manifest。
+
+</Tab>
+<Tab value="Windows PowerShell">
+
+<CopyableCommand command="(Get-FileHash migrations/20260601_001_init.sql -Algorithm SHA256).Hash.ToLower()" />
+
+</Tab>
+<Tab value="Python (跨平台)">
+
+```python
+import hashlib, sys
+data = open(sys.argv[1], "rb").read().decode("utf-8").encode("utf-8")
+print("sha256:" + hashlib.sha256(data).hexdigest())
+```
+
+</Tab>
+</Tabs>
+
+<Callout>
+**checksum 一旦写死，migration 文件不能再改。** 如果发现需要调，必须创建一条新的 migration（`20260605_001_fix_typo.sql`）覆盖。已 apply 过的 SQL 不会被重新执行——`plugin_schema_migrations` 表登记 `(plugin_id, version)` 跳过。
+</Callout>
+
+## 表所有权
+
+### `plugin_tables` 反查映射
+
+每次插件 install 时，框架按 manifest `tables[]` 写入 `plugin_tables`：
+
+```sql
+SELECT plugin_id, name, purge_on_uninstall, description
+FROM plugin_tables
+WHERE plugin_id = 'simple-momentum';
+```
+
+输出大概：
+
+```text
+plugin_id          name             purge_on_uninstall   description
+simple-momentum    sm_runs          true                 run 主表
+simple-momentum    sm_candidates    true                 候选股快照
+```
+
+### 命名约定（建议非强制）
+
+为避免和别的插件冲突，强烈建议使用 `<plugin_id 缩写>_*` 前缀：
+
+| 插件 | 前缀 | 例子 |
+|---|---|---|
+| `limit-up-board` | `lub_` | `lub_runs`、`lub_screens` |
+| `volume-anomaly` | `va_` | `va_runs`、`va_anomalies` |
+| `simple-momentum` | `sm_` | `sm_runs`、`sm_candidates` |
+
+如果你建的表名和别的官方插件冲突，install 时框架会在 `plugin_tables` 上撞 unique constraint，直接 fail（属于良性错误，提前发现）。
+
+## 升级时加新表 / 加列
+
+### 加新表
+
+```yaml
+# manifest 的 migrations 末尾追加：
+- version: "20260710_001"
+  file: migrations/20260710_001_add_alerts.sql
+  checksum: "sha256:..."
+
+# tables 列表追加：
+- name: sm_alerts
+  description: 异动告警
+  purge_on_uninstall: true
+```
+
+```sql
+-- migrations/20260710_001_add_alerts.sql
+CREATE TABLE IF NOT EXISTS sm_alerts (
+  alert_id   VARCHAR PRIMARY KEY,
+  ts_code    VARCHAR NOT NULL,
+  severity   VARCHAR
+);
+```
+
+升级（`deeptrade plugin upgrade simple-momentum`）会：
+1. 比 SemVer：候选 > 已装 → 进入升级
+2. 列出未应用 migration（这条新加的）
+3. 单事务内 apply
+4. 在 `plugin_tables` 追加 `sm_alerts` 行
+
+### 加列
+
+```sql
+-- migrations/20260720_001_add_score_breakdown.sql
+ALTER TABLE sm_candidates
+  ADD COLUMN IF NOT EXISTS score_breakdown VARCHAR;
+```
+
+DuckDB 不支持所有 `ALTER` 语法（特别是 PostgreSQL 风格的 `ALTER COLUMN ... TYPE`）。复杂迁移可能要走"建新表 + 拷数据 + 删旧表 + 改名"的模式，在一个事务里完成。
+
+## 卸载与 `--purge`
+
+```bash
+deeptrade plugin uninstall simple-momentum         # 不带 purge
+deeptrade plugin uninstall simple-momentum --purge # 带 purge
+```
+
+| 行为 | 默认 | `--purge` |
+|---|---|---|
+| 删 `~/.deeptrade/plugins/installed/<id>/` | ✓ | ✓ |
+| 删 `plugins / plugin_tables / plugin_schema_migrations` 中该插件的行 | ✓ | ✓ |
+| DROP `tables[]` 中 `purge_on_uninstall=true` 的表 | ✗ | ✓ |
+| DROP `purge_on_uninstall=false` 的表 | ✗ | ✗ |
+
+<Callout type="warn">
+**`--purge` 不可恢复。** 如果用户只是想"暂时不用，但保留分析数据"，**不**要带 `--purge`。重装时数据原样可读（只要新版插件 schema 兼容）。
+</Callout>
+
+## 跨插件读取的灰色地带
+
+技术上没有阻拦——`ctx.db` 是同一个 DuckDB 连接，能 SELECT 任意表。但**强烈不建议**：
+
+- 你的插件不知道对方版本，对方 schema 随时可能升级
+- 卸载对方插件 + `--purge` 会让你的 SELECT 报错
+- 跨插件依赖让 `validate_static` 不可单独部署
+
+如果确实需要"知道有没有装某插件"，查 `plugins` 表的 `plugin_id` 即可，不要直接读对方业务表。
+
+## 下一步
+
+→ [LLM 调用](/docs/developer/llm-access)
+
+> 关键词：数据隔离、Plan A、migrations、sha256、SQL、命名约定、表所有权、purge、ALTER、DuckDB、plugin_tables、plugin_schema_migrations

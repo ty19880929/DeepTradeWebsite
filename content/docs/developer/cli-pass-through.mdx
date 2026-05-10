@@ -1,0 +1,202 @@
+---
+title: CLI 透传与 Click 子命令
+description: "dispatch(argv) -> int 契约 — 框架不预解析 --help、子命令、flag；插件用 Click / argparse / typer 自由定义 CLI 形态"
+---
+
+DeepTrade 框架对 CLI 的态度是**完全放手**：你的插件就是一个普通的 Python 程序，自己解析 argv、自己渲染 `--help`、自己定义子命令树。本章讲清楚这个契约的边界。
+
+## `dispatch(argv)` 的契约
+
+```python
+# deeptrade/plugins_api/base.py
+class Plugin(Protocol):
+    metadata: PluginMetadata
+
+    def validate_static(self, ctx: PluginContext) -> None: ...
+
+    def dispatch(self, argv: list[str]) -> int: ...
+```
+
+| 方面 | 行为 |
+|---|---|
+| **入参 `argv`** | `list[str]`，**已剥掉**框架那层 plugin_id token |
+| **返回值** | `int`：作为 process 的 exit code（沿用 POSIX 约定，0=成功、非 0=错） |
+| **副作用** | 完全自由：写文件、调网络、读 stdin、写 stdout/stderr 都行 |
+| **--help 处理** | 框架不拦截；你必须自己渲染 |
+
+## 框架到底做了什么
+
+用户敲 `deeptrade limit-up-board screen --date 20260108 --top 30`：
+
+<Steps>
+<Step>
+
+### 1. 顶层 Group 拦截 `limit-up-board` token
+
+不是 5 个保留字之一 → 去 `plugins` 表查 `plugin_id="limit-up-board"`。命中且 enabled。
+
+</Step>
+<Step>
+
+### 2. 合成一个透传 Command
+
+```python
+# 框架内部，伪代码
+ctx.params['ignore_unknown_options'] = True
+ctx.params['allow_extra_args'] = True
+ctx.params['help_option_names'] = []   # 关键：让 --help 走到插件
+```
+
+</Step>
+<Step>
+
+### 3. 调插件
+
+```python
+exit_code = plugin.dispatch(['screen', '--date', '20260108', '--top', '30'])
+sys.exit(exit_code)
+```
+
+`screen / --date / --top` 都不解析，原样递给你。
+
+</Step>
+</Steps>
+
+## Click 实战（推荐）
+
+Click 与框架配合最自然——插件代码 90% 都用 Click。
+
+```python
+# my_plugin/plugin.py
+import click
+from deeptrade.plugins_api import Plugin, PluginContext, PluginMetadata
+
+
+class MyPlugin:
+    metadata: PluginMetadata
+
+    def validate_static(self, ctx: PluginContext) -> None:
+        pass
+
+    def dispatch(self, argv: list[str]) -> int:
+        try:
+            cli.main(args=argv, prog_name="deeptrade my-plugin", standalone_mode=False)
+        except click.exceptions.UsageError as e:
+            click.echo(str(e), err=True)
+            return 2
+        except click.exceptions.Abort:
+            return 130
+        except SystemExit as e:
+            return int(e.code or 0)
+        return 0
+
+
+@click.group()
+def cli() -> None:
+    """`deeptrade my-plugin` 子命令树。"""
+
+
+@cli.command()
+@click.option("--date", required=True, help="目标日期 YYYYMMDD")
+@click.option("--top", default=30, type=int, help="返回前 N 只")
+def screen(date: str, top: int) -> None:
+    """初筛候选股票。"""
+    click.echo(f"screen {date}, top {top}")
+
+
+@cli.command()
+@click.argument("run_id")
+@click.option("--llm", default=None, help="指定 LLM provider 名（可选）")
+def analyze(run_id: str, llm: str | None) -> None:
+    """详分析已 screen 出的 run。"""
+    click.echo(f"analyze {run_id} via {llm or 'default'}")
+```
+
+**几个关键点**：
+
+1. `cli.main(args=argv, standalone_mode=False)` —— `standalone_mode=False` 让 Click 抛异常而非 sys.exit，方便你捕获并返回 exit code
+2. `prog_name="deeptrade my-plugin"` —— 让 Click 渲染的 `--help` 显示正确的命令路径
+3. catch `click.exceptions.UsageError` 返回 2（POSIX 约定的"用法错误"）
+4. catch `Abort`（Ctrl+C）返回 130
+
+## argparse 替代（更轻）
+
+如果你想避免 Click 依赖：
+
+```python
+import argparse
+import sys
+
+class MyPlugin:
+    metadata: PluginMetadata
+
+    def validate_static(self, ctx: PluginContext) -> None:
+        pass
+
+    def dispatch(self, argv: list[str]) -> int:
+        parser = argparse.ArgumentParser(prog="deeptrade my-plugin")
+        sub = parser.add_subparsers(dest="cmd", required=True)
+
+        p_screen = sub.add_parser("screen")
+        p_screen.add_argument("--date", required=True)
+        p_screen.add_argument("--top", type=int, default=30)
+
+        try:
+            args = parser.parse_args(argv)
+        except SystemExit as e:
+            return int(e.code or 0)
+
+        if args.cmd == "screen":
+            print(f"screen {args.date} top {args.top}")
+            return 0
+        return 1
+```
+
+## `--help` 何时被触发
+
+| 命令 | 谁渲染 `--help` |
+|---|---|
+| `deeptrade --help` | 框架（`click.Group`） |
+| `deeptrade init --help` | 框架（注册命令） |
+| `deeptrade plugin --help` | 框架 |
+| `deeptrade my-plugin --help` | **你的插件**（argv = `['--help']`） |
+| `deeptrade my-plugin screen --help` | **你的插件**（argv = `['screen', '--help']`） |
+
+框架的 Command 配置 `help_option_names=[]` 显式关掉了对 `--help` 的拦截，所以 `--help` 永远会传给你的 dispatch。
+
+## stdin / 环境变量 / 子进程
+
+`dispatch` 本质是普通 Python 函数，没有沙箱：
+
+- ✓ 读 `sys.stdin` （管道输入）
+- ✓ 读 `os.environ`
+- ✓ `subprocess.run(...)` 调外部二进制
+- ✓ 写 `~/.deeptrade/reports/<run_id>/...` 任意文件
+- ✓ `requests.get(...)` 联网（注意：`validate_static` 才禁止网络，`dispatch` 不禁）
+
+**约束在于审计层**：所有 LLM / tushare 调用必须经过框架的 `LLMManager` / `TushareClient`，那两个会自动写 `llm_calls` / `tushare_calls` 审计表。详见 [LLM 调用](/docs/developer/llm-access)。
+
+## exit code 约定
+
+| 值 | 含义 |
+|---|---|
+| `0` | 正常完成 |
+| `1` | 一般错误（业务逻辑失败） |
+| `2` | 用户用法错误（`UsageError` / argparse 校验失败） |
+| `130` | 用户按 Ctrl+C |
+
+CI / 脚本依赖这些值做条件分支，请遵守。
+
+## 排错：透传不命中
+
+| 现象 | 排查 |
+|---|---|
+| `Unknown command: my-plugin` | `deeptrade plugin list` 看是否 `enabled=true` |
+| `--help` 显示框架的命令树 | 你装错版本，或 plugin entrypoint import 时抛异常被框架自动 disable |
+| argv 多了一个 `my-plugin` | 不会发生——框架 100% 剥掉。如果发生说明你 mock 时绕过了透传 |
+
+## 下一步
+
+→ [数据隔离规范](/docs/developer/data-isolation)
+
+> 关键词：dispatch、argv、CLI 透传、Click、argparse、typer、--help、exit code、UsageError、Abort、stdin、子进程
