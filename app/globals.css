@@ -6,17 +6,24 @@
  *      不需要再单独引入 tailwindcss。
  *   2. @source 让 Tailwind 扫描 fumadocs-ui 的 dist，确保它使用的 utility 不被
  *      tree-shake 掉。
- *   3. @theme 定义 DeepTrade 自有 design tokens，会自动派生为 utilities
- *      (例如 --color-background → bg-background)。
- *   4. :root 覆盖 fumadocs UI 的 --color-fd-* 变量，让文档站继承落地页的暗色。
- *   5. 强制 dark：不挂 .dark class，全站单一暗色。
+ *   3. @theme 定义 DeepTrade 自有 design tokens（默认值 = 暗色），会自动派生为
+ *      utilities (例如 --color-background → bg-background)。
+ *   4. :root 把 fumadocs UI 的 --color-fd-* 通过 `var(...)` 反向引用回我们的
+ *      tokens，这样切换 token 值时 fumadocs 自动跟着变。
+ *   5. 主题分区：
+ *        - 默认 / [data-theme="dark"] = 落地页 / /plugins / /changelog 暗黑
+ *        - [data-theme="light"]      = /docs/* 文档全树亮色（在 app/docs/layout.tsx
+ *          包一层 div 切作用域）
+ *      Fumadocs UI 内部用 `.dark .xx` 选择器实现 dark variant；我们从不在 html 上
+ *      挂 .dark class，所以这些规则永不命中——纯靠 CSS 变量级别切换主题，避免
+ *      JS 闪烁。
  */
 
 @import 'fumadocs-ui/css/style.css';
 @source '../node_modules/fumadocs-ui/dist/**/*.js';
 
 @theme {
-  /* ========== 颜色 ========== */
+  /* ========== 颜色（暗色基线，作为 utilities 默认值） ========== */
   --color-background: #000000;
   --color-foreground: #f8fafc; /* slate-50 */
   --color-muted: #94a3b8; /* slate-400 */
@@ -49,11 +56,16 @@
   --radius-pill: 9999px;
 }
 
-/* 全站强制暗色：不依赖 class，避免 fumadocs 的 ThemeProvider 在切换时闪烁 */
+/*
+ * 默认作用域 = 暗色。
+ *
+ * fumadocs --color-fd-* 用 var(--color-foreground) 这种"间接引用"，于是当
+ * [data-theme="light"] 重写底层 --color-foreground 时，fumadocs 变量会随之
+ * 自动 re-evaluate，无需在 light scope 里全部重声明一遍。
+ */
 :root {
   color-scheme: dark;
 
-  /* 把 fumadocs 的 --color-fd-* 全部映射到 DeepTrade tokens */
   --color-fd-background: var(--color-background);
   --color-fd-foreground: var(--color-foreground);
   --color-fd-muted: var(--color-surface);
@@ -70,6 +82,30 @@
   --color-fd-accent: var(--color-surface-2);
   --color-fd-accent-foreground: var(--color-foreground);
   --color-fd-ring: var(--color-foreground);
+}
+
+/*
+ * 文档站亮色作用域。
+ *
+ * 在 app/docs/layout.tsx 用 <div data-theme="light"> 包裹 DocsLayout 后，
+ * 这套覆盖只在文档子树内生效。
+ *
+ * 注意：只覆盖底层的 --color-* tokens，不重写 --color-fd-* —— :root 那一层的
+ * `var(--color-foreground)` 等会 lazy 解析到这里的新值，自动得到亮色 fumadocs UI。
+ */
+[data-theme='light'] {
+  color-scheme: light;
+
+  --color-background: #ffffff;
+  --color-foreground: #0f172a; /* slate-900：正文与标题 */
+  --color-muted: #475569; /* slate-600：副文 */
+  --color-muted-2: #64748b; /* slate-500：更弱的辅助 */
+  --color-surface: #f8fafc; /* slate-50：极轻提升的卡片底色 */
+  --color-surface-2: #f1f5f9; /* slate-100：再深一层 */
+  --color-border: #e2e8f0; /* slate-200 */
+  --color-border-soft: rgba(15, 23, 42, 0.08);
+  --color-accent: #0f172a;
+  --color-link: #1e293b; /* slate-800 */
 }
 
 html,

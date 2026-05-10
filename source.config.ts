@@ -4,4 +4,19 @@ export const docs = defineDocs({
   dir: 'content/docs',
 });
 
-export default defineConfig();
+/**
+ * shiki code block 主题：固定走 github-light，因为：
+ *   - /docs/* 走亮色作用域，原本就需要 light theme
+ *   - 落地页 / /plugins 不渲染 MDX 代码块，不受影响
+ *   - /changelog（M4）后续若有代码块，亮色 vs 暗色背景对比度也都能读
+ */
+export default defineConfig({
+  mdxOptions: {
+    rehypeCodeOptions: {
+      themes: {
+        light: 'github-light',
+        dark: 'github-light',
+      },
+    },
+  },
+});

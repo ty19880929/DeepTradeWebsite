@@ -46,8 +46,8 @@ const COLUMNS: Column[] = [
 export function Footer() {
   return (
     <footer className="border-border-soft mt-32 border-t">
-      <div className="mx-auto grid max-w-6xl grid-cols-1 gap-10 px-6 py-16 sm:grid-cols-2 lg:grid-cols-4">
-        <div className="space-y-4">
+      <div className="mx-auto grid max-w-6xl grid-cols-1 gap-12 px-6 py-16 sm:grid-cols-2 lg:grid-cols-5 lg:gap-16">
+        <div className="space-y-4 lg:col-span-2 lg:pr-8">
           <Link href="/" aria-label="DeepTrade 首页" className="text-foreground inline-block">
             <BrandLogo className="h-8" />
           </Link>
