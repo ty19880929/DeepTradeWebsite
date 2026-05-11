@@ -13,16 +13,16 @@ const KIND_LABELS: Record<string, { en: string; cn: string }> = {
 const SUPPORTED_KINDS = new Set(Object.keys(KIND_LABELS));
 
 /**
- * 通过 Google Fonts CSS API 取 Noto Sans SC 700 的"按字符子集化"版本。
- * 把 title 里出现的字传进去，gstatic 只回包含这些字的 woff2，size 通常
- * < 30KB。Vercel Edge cache 自动按响应缓存。
+ * 通过 Google Fonts CSS API 按 ?text=... 子集化拉 Noto Sans SC 700。
+ * 仅取 title 里出现的字 + 站点必备字，woff2 通常 < 30KB；Vercel Edge 自动缓存。
+ *
+ * 任一步失败直接 throw，外层调用方拿不到字体就退化到 Latin-only fallback。
  */
 async function loadCjkFont(text: string): Promise<ArrayBuffer> {
   const cssRes = await fetch(
     `https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@700&display=swap&text=${encodeURIComponent(text)}`,
     {
       headers: {
-        // 不带 UA，gstatic 会回 .ttf；带主流浏览器 UA 则回 woff2（更小）
         'User-Agent':
           'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0 Safari/537.36',
       },
@@ -38,43 +38,46 @@ async function loadCjkFont(text: string): Promise<ArrayBuffer> {
 }
 
 export async function GET(request: NextRequest): Promise<Response> {
-  try {
-    const { searchParams } = new URL(request.url);
-    const rawTitle = searchParams.get('title')?.slice(0, 80) ?? 'DeepTrade';
-    const rawKind = searchParams.get('kind') ?? 'default';
-    const kind = SUPPORTED_KINDS.has(rawKind) ? rawKind : 'default';
-    const label = KIND_LABELS[kind]!;
+  const { searchParams } = new URL(request.url);
+  const rawTitle = (searchParams.get('title') ?? 'DeepTrade').slice(0, 80);
+  const rawKind = searchParams.get('kind') ?? 'default';
+  const kind = SUPPORTED_KINDS.has(rawKind) ? rawKind : 'default';
+  const label = KIND_LABELS[kind]!;
 
-    // 子集只覆盖 title + 全部 kind 标签 + 站点必备字（避免后续不同 title 命中冷字时 fallback）
-    const subsetText =
+  // 字体加载独立 try/catch；失败也要给 social crawler 出图，不能 500/0-byte
+  let fontData: ArrayBuffer | null = null;
+  try {
+    const subset =
       rawTitle +
       Object.values(KIND_LABELS)
         .map((l) => l.cn)
         .join('') +
       'DeepTrade本地运行的A股选股CLI框架';
-    const fontData = await loadCjkFont(subsetText);
+    fontData = await loadCjkFont(subset);
+  } catch (err) {
+    console.warn('[og] CJK font load failed, falling back to default:', err);
+  }
 
-    return new ImageResponse(
-      (
-        <div
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            width: '100%',
-            height: '100%',
-            backgroundColor: '#000000',
-            color: '#f8fafc',
-            padding: '64px 72px',
-            fontFamily: 'NotoSansSC, system-ui, -apple-system, sans-serif',
-            position: 'relative',
-          }}
-        >
-          {/* 顶部：DEEPTRADE wordmark */}
-          <div
+  // Satori 硬要求：每个元素都得有显式 display，纯文本必须包在 element 里
+  return new ImageResponse(
+    (
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          width: '100%',
+          height: '100%',
+          backgroundColor: '#000000',
+          color: '#f8fafc',
+          padding: '64px 72px',
+          fontFamily: fontData ? 'NotoSansSC, sans-serif' : 'sans-serif',
+        }}
+      >
+        {/* 顶部 wordmark */}
+        <div style={{ display: 'flex', alignItems: 'center' }}>
+          <span
             style={{
               display: 'flex',
-              alignItems: 'center',
-              gap: '16px',
               fontSize: 36,
               fontWeight: 700,
               letterSpacing: '0.18em',
@@ -82,14 +85,20 @@ export async function GET(request: NextRequest): Promise<Response> {
             }}
           >
             DEEPTRADE
-          </div>
+          </span>
+        </div>
 
-          {/* 主标题 */}
-          <div
+        {/* 主标题 */}
+        <div
+          style={{
+            display: 'flex',
+            flex: 1,
+            alignItems: 'center',
+          }}
+        >
+          <span
             style={{
               display: 'flex',
-              flex: 1,
-              alignItems: 'center',
               fontSize: rawTitle.length > 28 ? 56 : 72,
               fontWeight: 700,
               lineHeight: 1.15,
@@ -99,105 +108,63 @@ export async function GET(request: NextRequest): Promise<Response> {
             }}
           >
             {rawTitle}
-          </div>
+          </span>
+        </div>
 
-          {/* 底部 */}
+        {/* 底部 */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }}
+        >
           <div
             style={{
               display: 'flex',
               alignItems: 'center',
-              justifyContent: 'space-between',
-              fontSize: 24,
-              color: '#94a3b8',
+              padding: '8px 16px',
+              border: '1px solid #1e293b',
+              borderRadius: 9999,
+              fontSize: 18,
+              fontWeight: 500,
+              letterSpacing: '0.18em',
+              color: '#e2e8f0',
             }}
           >
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '12px',
-                padding: '8px 16px',
-                border: '1px solid #1e293b',
-                borderRadius: 9999,
-                fontSize: 18,
-                fontWeight: 500,
-                letterSpacing: '0.18em',
-                color: '#e2e8f0',
-              }}
-            >
-              <span style={{ display: 'flex' }}>{label.en}</span>
-              <span style={{ display: 'flex', color: '#475569' }}>·</span>
-              <span style={{ display: 'flex', color: '#94a3b8' }}>{label.cn}</span>
-            </div>
-            <div
-              style={{
-                display: 'flex',
-                fontFamily: 'monospace',
-                fontSize: 22,
-                color: '#64748b',
-                letterSpacing: '0.04em',
-              }}
-            >
-              deeptrade.tiey.ai
-            </div>
+            <span style={{ display: 'flex' }}>{label.en}</span>
+            <span style={{ display: 'flex', color: '#475569', margin: '0 12px' }}>·</span>
+            <span style={{ display: 'flex', color: '#94a3b8' }}>{label.cn}</span>
           </div>
-
-          {/* 右上角微弱网格装饰 */}
-          <div
+          <span
             style={{
-              position: 'absolute',
-              top: 0,
-              right: 0,
-              width: 360,
-              height: 360,
-              backgroundImage:
-                'linear-gradient(rgba(148,163,184,0.08) 1px, transparent 1px), linear-gradient(90deg, rgba(148,163,184,0.08) 1px, transparent 1px)',
-              backgroundSize: '24px 24px',
-              maskImage:
-                'radial-gradient(circle at top right, black 0%, transparent 70%)',
-              WebkitMaskImage:
-                'radial-gradient(circle at top right, black 0%, transparent 70%)',
+              display: 'flex',
+              fontFamily: 'monospace',
+              fontSize: 22,
+              color: '#64748b',
+              letterSpacing: '0.04em',
             }}
-          />
+          >
+            deeptrade.tiey.ai
+          </span>
         </div>
-      ),
-      {
-        width: 1200,
-        height: 630,
-        fonts: [
-          {
-            name: 'NotoSansSC',
-            data: fontData,
-            weight: 700,
-            style: 'normal',
-          },
-        ],
-      },
-    );
-  } catch (err) {
-    // 兜底：字体拉取失败也要给 social crawler 一张图，不能 500
-    console.error('[og] render failed, falling back:', err);
-    return new ImageResponse(
-      (
-        <div
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            justifyContent: 'center',
-            alignItems: 'center',
-            width: '100%',
-            height: '100%',
-            backgroundColor: '#000',
-            color: '#f8fafc',
-            fontSize: 64,
-            fontWeight: 700,
-            letterSpacing: '0.18em',
-          }}
-        >
-          DEEPTRADE
-        </div>
-      ),
-      { width: 1200, height: 630 },
-    );
-  }
+      </div>
+    ),
+    {
+      width: 1200,
+      height: 630,
+      ...(fontData
+        ? {
+            fonts: [
+              {
+                name: 'NotoSansSC',
+                data: fontData,
+                weight: 700,
+                style: 'normal',
+              },
+            ],
+          }
+        : {}),
+    },
+  );
 }
