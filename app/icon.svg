@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 80">
+  <style>
+    path { fill: #000; }
+    @media (prefers-color-scheme: dark) {
+      path { fill: #fff; }
+    }
+  </style>
+  <g transform="translate(8, 0)">
+    <path d="M16 0H0V16H16V0Z"/>
+    <path d="M32 0H16V16H32V0Z"/>
+    <path d="M48 0H32V16H48V0Z"/>
+    <path d="M16 16H0V32H16V16Z"/>
+    <path d="M64 16H48V32H64V16Z"/>
+    <path d="M16 32H0V48H16V32Z"/>
+    <path d="M64 32H48V48H64V32Z"/>
+    <path d="M16 48H0V64H16V48Z"/>
+    <path d="M64 48H48V64H64V48Z"/>
+    <path d="M16 64H0V80H16V64Z"/>
+    <path d="M32 64H16V80H32V64Z"/>
+    <path d="M48 64H32V80H48V64Z"/>
+  </g>
+</svg>
