@@ -37,7 +37,11 @@ export default function ChangelogPage() {
   const body = raw.replace(/^#\s+Changelog\s*\n+/i, '');
 
   return (
-    <>
+    // R1 兜底：外层 legacy-dark 让 Navbar/Footer 视觉与 M1-M5 上线版本一致；
+    // 内层 light scope 继续把 article 区域翻成亮色（光阅读舒适度优先）。
+    // light scope 显式重写了所有 --color-fd-* 与 --color-*，特异性后代选择
+    // 器胜出，不被外层 legacy-dark 污染。
+    <div data-theme="legacy-dark" className="bg-background text-foreground min-h-screen">
       <Navbar />
       <main>
         <div data-theme="light" className="bg-background text-foreground">
@@ -65,6 +69,6 @@ export default function ChangelogPage() {
         </div>
       </main>
       <Footer />
-    </>
+    </div>
   );
 }

@@ -26,7 +26,9 @@ export default async function PluginsPage() {
   const channelCount = plugins.filter((p) => p.type === 'channel').length;
 
   return (
-    <>
+    // R1 兜底：落地页已切到 Tabular @theme；本页尚未升级，整页包 legacy-dark
+    // wrapper 把 --color-* 回退到 M1-M5 上线时的值，视觉与重构前保持一致。
+    <div data-theme="legacy-dark" className="bg-background text-foreground min-h-screen">
       <Navbar />
       <main className="mx-auto max-w-6xl px-6 pt-24 pb-16">
         <header className="mx-auto max-w-3xl text-center">
@@ -53,6 +55,6 @@ export default async function PluginsPage() {
         </div>
       </main>
       <Footer />
-    </>
+    </div>
   );
 }

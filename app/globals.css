@@ -23,37 +23,64 @@
 @source '../node_modules/fumadocs-ui/dist/**/*.js';
 
 @theme {
-  /* ========== 颜色（暗色基线，作为 utilities 默认值） ========== */
-  --color-background: #000000;
-  --color-foreground: #f8fafc; /* slate-50 */
-  --color-muted: #94a3b8; /* slate-400 */
-  --color-muted-2: #64748b; /* slate-500 */
-  --color-surface: #0f172a; /* slate-900 */
-  --color-surface-2: #1e293b; /* slate-800 */
-  --color-border: #1e293b;
-  --color-border-soft: rgba(255, 255, 255, 0.08);
-  --color-accent: #f8fafc;
-  --color-diff-add: #22c55e;
-  --color-diff-remove: #ef4444;
-  --color-link: #e2e8f0;
+  /* ==========================================================================
+   * R1 Tabular 基线（落地页主导）
+   * ==========================================================================
+   * 默认 @theme = OpenSpec Tabular 风：极深底、单色高对比、0 radius、单色 mono。
+   * 旧版暗色（slate-50 / slate-900 / 圆角 0.75rem）下沉到下方
+   * [data-theme="legacy-dark"] scope，只在 /plugins、/changelog 这些尚未升级
+   * Tabular 视觉的页面里通过 wrapper 调用。
+   *
+   * 文档站 [data-theme="light"] 不受影响 —— 它在自己 scope 里显式重写所有
+   * --color-* 和 --color-fd-* 变量。
+   * ========================================================================== */
 
-  /* ========== 字体（具体 family 在 layout.tsx 注入 next/font 变量） ========== */
+  /* ========== 颜色（Tabular 基线） ========== */
+  --color-background: #050505;
+  --color-foreground: #eeeeee;
+  --color-muted: #888888;
+  --color-muted-2: #666666;
+  --color-surface: #0a0a0a;   /* diff / code 块底色 */
+  --color-surface-2: #131313; /* 行号 / 次级容器 */
+  --color-border: #2a2a2a;
+  --color-border-soft: #1f1f1f;
+  --color-accent: #a3f69c;        /* [PLUGINS] tag */
+  --color-accent-yellow: #c7b32b; /* [CORE] tag */
+  --color-diff-add: #88ff88;
+  --color-diff-add-bg: rgba(0, 255, 0, 0.2);
+  --color-diff-remove: #ff8888;
+  --color-diff-remove-bg: rgba(255, 0, 0, 0.2);
+  --color-link: #cccccc;
+
+  /* ========== 字体（具体 family 在 layout.tsx 注入 next/font 变量） ==========
+   * 落地页强制 mono：--font-sans 直接指向 JetBrains Mono，避免组件级再写 font-mono。
+   * Inter 变量保留供旧页面（Navbar/Footer/legacy-dark scope）使用。
+   * VT323 仅 logo 用，next/font subset 后体积 ~10KB。 */
   --font-sans:
-    var(--font-inter), 'Inter', 'Geist', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+    var(--font-jetbrains-mono), 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
   --font-mono:
     var(--font-jetbrains-mono), 'JetBrains Mono', 'Geist Mono', ui-monospace, SFMono-Regular,
     monospace;
+  --font-pixel: var(--font-vt323), 'VT323', monospace;
 
-  /* ========== 字号缩放 ========== */
-  --text-hero: clamp(2.5rem, 5.5vw, 4.5rem);
-  --text-section: clamp(1.875rem, 3vw, 2.5rem);
+  /* ========== 字号（Tabular 信息密度优先） ==========
+   * Hero 大标题不再 clamp；UPPERCASE + tracking 提供层级，固定 18-20px。 */
+  --text-xxs: 10px;
+  --text-xs: 12px;
+  --text-sm: 14px;
+  --text-base: 16px;
+  --text-statement: 20px;
+  --text-section: 16px;
+
+  /* ========== 字距 ========== */
+  --tracking-table: 0.15em;
 
   /* ========== 间距 ========== */
-  --spacing-section: clamp(4rem, 8vw, 8rem);
+  --spacing-section: 4rem; /* mt-section = 64px */
 
-  /* ========== 圆角 ========== */
-  --radius-card: 0.75rem; /* 12px */
-  --radius-pill: 9999px;
+  /* ========== 形状（全局 0 radius + 0 shadow） ========== */
+  --radius-card: 0;
+  --radius-pill: 0;
 }
 
 /*
@@ -174,4 +201,36 @@ body {
 :focus-visible {
   outline: 2px solid color-mix(in srgb, var(--color-foreground) 60%, transparent);
   outline-offset: 2px;
+}
+
+/*
+ * 旧暗色作用域（R1 兜底）。
+ *
+ * R1 把默认 @theme 切到 Tabular 配色后，/plugins、/changelog 这些尚未升级的
+ * 暗色页会跟着掉到极深底 + #2a2a2a 边框上 —— 视觉与上线版本严重退化。在它们
+ * 的最外层包一层 <div data-theme="legacy-dark" className="bg-background
+ * text-foreground"> 后，子树内部所有 --color-* 退回到 M1-M5 上线时的值，
+ * fumadocs 的 --color-fd-* 通过 :root 的 var() 间接引用自动 re-evaluate
+ * 拿到旧值，无需在这里重复声明。
+ *
+ * 等这些页面升级到 Tabular 视觉（R2）后，本 scope 可整段删除。
+ */
+[data-theme='legacy-dark'] {
+  color-scheme: dark;
+
+  --color-background: #000000;
+  --color-foreground: #f8fafc;
+  --color-muted: #94a3b8;
+  --color-muted-2: #64748b;
+  --color-surface: #0f172a;
+  --color-surface-2: #1e293b;
+  --color-border: #1e293b;
+  --color-border-soft: rgba(255, 255, 255, 0.08);
+  --color-accent: #f8fafc;
+  --color-link: #e2e8f0;
+  --color-diff-add: #22c55e;
+  --color-diff-remove: #ef4444;
+
+  --radius-card: 0.75rem;
+  --radius-pill: 9999px;
 }
