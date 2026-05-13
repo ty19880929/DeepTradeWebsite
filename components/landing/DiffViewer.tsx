@@ -18,8 +18,11 @@ interface DiffRow {
 }
 
 /**
- * 构建期 line-level diff（RSC 组件，diffLines 调用不下发到客户端）。
- * 渲染 unified diff 行：+ 绿底，- 红底，context 中性。
+ * R1 Tabular DiffViewer：
+ * - 取消 rounded-card / shadow-2xl，外框 1px #2a2a2a；
+ * - 左侧固定 w-8 行号列（bg-surface-2），与代码 1:1 对齐（双侧 leading-6 + py-4）；
+ * - add / remove 行用 --color-diff-add-bg / --color-diff-remove-bg 横向通铺背景；
+ * - 构建期完成 diffLines 计算（RSC），diff 包不下发到客户端 bundle。
  */
 export function DiffViewer({ before, after, title, filename, className }: DiffViewerProps) {
   const rows = computeRows(before, after);
@@ -27,33 +30,38 @@ export function DiffViewer({ before, after, title, filename, className }: DiffVi
   return (
     <figure
       className={cn(
-        'rounded-card border-border bg-surface overflow-hidden border font-mono text-sm shadow-2xl shadow-black/40',
+        'border-border bg-surface overflow-hidden border font-mono text-sm tracking-normal normal-case',
         className,
       )}
       aria-label={title ?? '配置 diff'}
     >
-      <header className="border-border-soft flex h-9 items-center justify-between border-b px-4 text-xs">
+      <header className="border-border flex h-9 items-center justify-between border-b px-4 text-xs">
         <span className="text-foreground select-none">{title ?? 'unified diff'}</span>
         {filename ? <span className="text-muted-2 select-none">{filename}</span> : null}
       </header>
-      <pre className="m-0 overflow-x-auto px-5 py-4 leading-6">
-        {rows.map((row, idx) => (
-          <div
-            key={idx}
-            className={cn(
-              'flex items-start gap-2 px-2 -mx-2',
-              row.type === 'add' && 'bg-diff-add/10 text-diff-add',
-              row.type === 'remove' && 'bg-diff-remove/10 text-diff-remove',
-              row.type === 'context' && 'text-muted',
-            )}
-          >
-            <span className="select-none w-3 text-right">
-              {row.type === 'add' ? '+' : row.type === 'remove' ? '-' : ' '}
-            </span>
-            <span className="whitespace-pre-wrap break-words">{row.text}</span>
-          </div>
-        ))}
-      </pre>
+      <div className="flex">
+        <div className="border-border bg-surface-2 text-muted-2 w-8 shrink-0 border-r py-4 pr-2 text-right leading-6 select-none">
+          {rows.map((_, i) => (
+            <div key={i}>{i + 1}</div>
+          ))}
+        </div>
+        <div className="flex-1 overflow-x-auto py-4 leading-6 whitespace-pre">
+          {rows.map((row, idx) => (
+            <div
+              key={idx}
+              className={cn(
+                'px-4',
+                row.type === 'add' && 'bg-diff-add-bg text-diff-add',
+                row.type === 'remove' && 'bg-diff-remove-bg text-diff-remove',
+                row.type === 'context' && 'text-muted',
+              )}
+            >
+              {row.type === 'add' ? '+ ' : row.type === 'remove' ? '- ' : '  '}
+              {row.text || ' '}
+            </div>
+          ))}
+        </div>
+      </div>
     </figure>
   );
 }

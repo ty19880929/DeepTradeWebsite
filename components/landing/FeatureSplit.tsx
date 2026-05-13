@@ -2,6 +2,11 @@ import type { ReactNode } from 'react';
 
 import { cn } from '@/lib/utils';
 
+/**
+ * @deprecated R1 弃用，由 `FeatureBlock`（垂直 stacked bordered box）取代。
+ * 文件保留是为了避免一并删除引发 import 错误，下一迭代（R2）整体清死代码。
+ * 新增页面不要 import 这个组件 —— 见 DEV_PLAN R1 §1.1。
+ */
 interface FeatureSplitProps {
   /** false：左文右视觉；true：反向 */
   reverse?: boolean;

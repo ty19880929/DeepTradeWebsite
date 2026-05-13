@@ -1,14 +1,12 @@
 import type { Metadata } from 'next';
 
+import { DiffViewer } from '@/components/landing/DiffViewer';
 import { EcosystemGrid } from '@/components/landing/EcosystemGrid';
 import { FaqAccordion } from '@/components/landing/FaqAccordion';
-import { FeatureSplit } from '@/components/landing/FeatureSplit';
-import { FileTreeViz } from '@/components/landing/FileTreeViz';
+import { FeatureBlock } from '@/components/landing/FeatureBlock';
 import { Footer } from '@/components/landing/Footer';
 import { Hero } from '@/components/landing/Hero';
 import { Navbar } from '@/components/landing/Navbar';
-import { DiffViewer } from '@/components/landing/DiffViewer';
-import { TerminalDemo } from '@/components/landing/TerminalDemo';
 import { buildMetadata } from '@/lib/seo';
 
 export const metadata: Metadata = buildMetadata({
@@ -49,57 +47,16 @@ const HERO_DATA: {
   ],
 };
 
+// 顺序匹配原型：前 4 个为 native LLM 与数据源（横向排），后 2 个为附属环境
+// （DuckDB / Python）补一行，与 landing-prototype.html L137-144 一致。
 const ECOSYSTEM = [
   { id: 'deepseek', display: 'DeepSeek', href: 'https://www.deepseek.com' },
   { id: 'qwen', display: 'Qwen', href: 'https://qwen.ai' },
   { id: 'kimi', display: 'Kimi', href: 'https://www.moonshot.cn' },
-  { id: 'duckdb', display: 'DuckDB', href: 'https://duckdb.org' },
   { id: 'tushare', display: 'Tushare', href: 'https://tushare.pro' },
-  { id: 'python', display: 'Python', href: 'https://www.python.org' },
+  { id: 'duckdb', display: 'DuckDB', href: 'https://duckdb.org' },
+  { id: 'python', display: 'Python 3.10+', href: 'https://www.python.org' },
 ];
-
-const TERMINAL_LINES = [
-  { type: 'cmd' as const, content: 'pipx install deeptrade-quant' },
-  { type: 'output' as const, content: '✓ installed deeptrade 0.2.0' },
-  { type: 'cmd' as const, content: 'deeptrade init', delayMs: 600 },
-  { type: 'output' as const, content: '✓ ~/.deeptrade/ created' },
-  { type: 'output' as const, content: '✓ DuckDB schema applied · 8 framework tables' },
-  { type: 'output' as const, content: '> tushare token: ********' },
-  { type: 'output' as const, content: '✓ saved to OS keyring' },
-  { type: 'cmd' as const, content: 'deeptrade plugin install limit-up-board', delayMs: 700 },
-  { type: 'output' as const, content: '✓ migrations applied · 3 plugin tables registered' },
-  { type: 'comment' as const, content: 'done · 你已经准备好跑第一个策略', delayMs: 500 },
-];
-
-const FILE_TREE = {
-  name: '~/.deeptrade',
-  type: 'dir' as const,
-  badge: 'framework' as const,
-  children: [
-    {
-      name: 'deeptrade.db',
-      type: 'file' as const,
-      badge: 'framework' as const,
-      hint: 'DuckDB 单文件',
-    },
-    {
-      name: 'plugins',
-      type: 'dir' as const,
-      badge: 'framework' as const,
-      hint: '注册表',
-      children: [
-        { name: 'plugins', type: 'file' as const, badge: 'framework' as const },
-        { name: 'plugin_tables', type: 'file' as const, badge: 'framework' as const },
-        { name: 'llm_calls', type: 'file' as const, badge: 'framework' as const, hint: 'plugin_id 维度审计' },
-        { name: 'tushare_calls', type: 'file' as const, badge: 'framework' as const },
-        { name: 'lub_runs', type: 'file' as const, badge: 'plugin-a' as const },
-        { name: 'lub_screens', type: 'file' as const, badge: 'plugin-a' as const },
-        { name: 'va_runs', type: 'file' as const, badge: 'plugin-b' as const },
-        { name: 'va_anomalies', type: 'file' as const, badge: 'plugin-b' as const },
-      ],
-    },
-  ],
-};
 
 const LLM_CONFIG_BEFORE = `{
   "providers": {
@@ -153,7 +110,7 @@ const FAQS = [
     q: '如何保障数据隐私？',
     a: (
       <>
-        所有数据落在本地 <code className="bg-surface text-foreground rounded px-1 font-mono text-sm">~/.deeptrade/deeptrade.db</code>
+        所有数据落在本地 <code className="bg-surface text-foreground px-1 font-mono text-sm">~/.deeptrade/deeptrade.db</code>
         （DuckDB 单文件）。除你显式配置的 LLM provider 与 tushare 接口外，框架不向任何外部服务发遥测。
       </>
     ),
@@ -203,69 +160,51 @@ export default function LandingPage() {
 
         <Hero {...HERO_DATA} />
 
-        <EcosystemGrid
-          title="无缝集成你熟悉的基建与大模型"
-          description="OpenAI 兼容协议，配好 base_url 与 api_key 即可。本地 DuckDB 仓库由框架统一管理，行情来自 tushare。"
-          entries={ECOSYSTEM}
-        />
+        <EcosystemGrid entries={ECOSYSTEM} />
 
-        <FeatureSplit
-          eyebrow="特性 A"
-          title="极致轻量的本地体验"
-          body={
+        {/* FEATURES 分组：三个 FeatureBlock 共享同一顶部标签 */}
+        <div className="text-foreground mt-section mb-4 font-bold">FEATURES</div>
+        <FeatureBlock
+          title="SWITCH MODELS INSTANTLY, NO CODE CHANGES"
+          summary={
             <>
-              <p>
-                一条 <code className="bg-surface text-foreground rounded px-1 font-mono text-sm">pipx install</code>
-                跑完安装。无需 Docker、无需常驻服务进程。所有状态都落在
-                <code className="bg-surface text-foreground rounded px-1 font-mono text-sm">~/.deeptrade/deeptrade.db</code>
-                单个 DuckDB 文件里——可备份、可迁移、可随手 SQL 查询。
-              </p>
-              <p>secret 走 OS keyring，没有 keyring 时回退到加密的 secret_store 表，不会明文落盘。</p>
-            </>
-          }
-          visual={<TerminalDemo lines={TERMINAL_LINES} loop />}
-        />
-
-        <FeatureSplit
-          reverse
-          eyebrow="特性 B"
-          title="完全解耦的插件生态"
-          body={
-            <>
-              <p>
-                框架只持有审计表（<code className="text-foreground bg-surface rounded px-1 font-mono text-sm">plugins / llm_calls / tushare_calls</code>），
-                业务表全部由插件通过 migrations 自带、按 plugin_id 命名空间隔离。
-              </p>
-              <p>
-                添加新策略 = 新插件包，零框架改动。框架命令未命中时，CLI 自动透传到插件 dispatch；插件保留完全自治。
-              </p>
-            </>
-          }
-          visual={<FileTreeViz root={FILE_TREE} title="按插件维度物理隔离" />}
-        />
-
-        <FeatureSplit
-          eyebrow="特性 C"
-          title="原生多模型 LLM 矩阵"
-          body={
-            <>
-              <p>
-                <code className="text-foreground bg-surface rounded px-1 font-mono text-sm">llm.providers</code>
-                是一个 JSON 字典，多个 OpenAI 兼容厂商并存。切默认 provider 只改一行。
-              </p>
-              <p>
-                所有 LLM 调用强约束 JSON mode + Pydantic 校验，禁用 tool/function call，
-                把“幻觉”压在结构化输出层而不是后处理。
-              </p>
+              <code className="text-foreground bg-surface px-1 font-mono text-sm">llm.providers</code>{' '}
+              是一个 JSON 字典，多个 OpenAI 兼容厂商并存。切默认 provider 只改一行。所有
+              LLM 调用强约束 Pydantic JSON mode + 禁用 tool/function call，把&ldquo;幻觉&rdquo;
+              压在结构化输出层而不是后处理。
             </>
           }
           visual={
             <DiffViewer
               before={LLM_CONFIG_BEFORE}
               after={LLM_CONFIG_AFTER}
-              title="切换 default LLM provider"
+              title="switch default llm provider"
               filename="app_config / llm.providers"
             />
+          }
+        />
+        <FeatureBlock
+          title="LOCAL-ONLY STATE: ONE DUCKDB FILE"
+          summary={
+            <>
+              一条 <code className="text-foreground bg-surface px-1 font-mono text-sm">pipx install</code>{' '}
+              跑完安装；无需 Docker、无需常驻服务进程。所有状态都落在{' '}
+              <code className="text-foreground bg-surface px-1 font-mono text-sm">~/.deeptrade/deeptrade.db</code>{' '}
+              单个 DuckDB 文件里——可备份、可迁移、可随手 SQL 查询。Secret 走 OS keyring，
+              无 keyring 时回退到加密的 secret_store 表，不会明文落盘。
+            </>
+          }
+        />
+        <FeatureBlock
+          title="COMPLETELY DECOUPLED PLUGIN BOUNDARY"
+          summary={
+            <>
+              框架本体只持有审计表（
+              <code className="text-foreground bg-surface px-1 font-mono text-sm">plugins / llm_calls / tushare_calls</code>
+              ），业务表全部由插件通过 migrations 自带、按 plugin_id 命名空间隔离。
+              新增策略 = 新插件包，零框架改动；CLI 命令未命中时自动透传到插件 dispatch，
+              插件保留完全自治。
+            </>
           }
         />
 

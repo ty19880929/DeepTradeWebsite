@@ -5,56 +5,65 @@ import { cn } from '@/lib/utils';
 interface EcosystemEntry {
   /** 内部 key */
   id: string;
-  /** 渲染的展示文本 */
+  /** 渲染的展示文本（外层 main 已 uppercase，传 mixed case 也会被强制大写） */
   display: string;
   /** 可选外链。提供时整个 cell 变成 a 标签 */
   href?: string;
 }
 
 interface EcosystemGridProps {
-  title: string;
-  /** 副标题，可选 */
-  description?: string;
+  /** 分组标签，默认 "ECOSYSTEM" */
+  title?: string;
+  /** 副标签（block header），默认 "NATIVE SUPPORT" */
+  groupLabel?: string;
   entries: EcosystemEntry[];
 }
 
 /**
- * 复刻 openspec.dev 的 "Supported Tools" 区块。
- * 当前 milestone 用单色文字 wordmark 占位（mono 字体 + 边框），
- * 后续可替换为官方 brand kit SVG（参见 R6）。
+ * R1 Tabular：bordered 单容器内分两段渲染 ——
+ * - 顶段：4 列横向排（divide-x），少于 4 个时按实际列数；
+ * - 次段：剩余 entries 按 2 列网格再补一行。
+ *
+ * 设计意图来自 landing-prototype.html L131-146：先呈现核心 native support（4
+ * 个 LLM/数据源），再用一行附属环境（DuckDB / Python 版本）兜底，信息层级
+ * 清晰而不拥挤。
  */
-export function EcosystemGrid({ title, description, entries }: EcosystemGridProps) {
-  return (
-    <section className="border-border-soft mx-auto max-w-6xl border-t px-6 py-section">
-      <div className="text-center">
-        <h2 className="text-foreground text-section font-bold tracking-tight">{title}</h2>
-        {description ? (
-          <p className="text-muted mx-auto mt-4 max-w-2xl text-sm leading-6 sm:text-base">
-            {description}
-          </p>
-        ) : null}
-      </div>
+export function EcosystemGrid({
+  title = 'ECOSYSTEM',
+  groupLabel = 'NATIVE SUPPORT',
+  entries,
+}: EcosystemGridProps) {
+  const first = entries.slice(0, 4);
+  const rest = entries.slice(4);
 
-      <ul className="mt-12 grid grid-cols-3 gap-3 sm:gap-4 lg:grid-cols-6">
-        {entries.map((entry) => (
-          <li key={entry.id}>
-            <Cell entry={entry} />
-          </li>
-        ))}
-      </ul>
+  return (
+    <section className="mt-section">
+      <div className="text-foreground mb-4 font-bold">{title}</div>
+      <div className="border-border border">
+        <div className="border-border text-muted border-b p-4">{groupLabel}</div>
+
+        <div className="divide-border text-muted grid grid-cols-2 divide-y text-center md:grid-cols-4 md:divide-x md:divide-y-0">
+          {first.map((entry) => (
+            <Cell key={entry.id} entry={entry} />
+          ))}
+        </div>
+
+        {rest.length > 0 && (
+          <div className="border-border divide-border text-muted grid grid-cols-2 divide-x border-t text-center">
+            {rest.map((entry) => (
+              <Cell key={entry.id} entry={entry} />
+            ))}
+          </div>
+        )}
+      </div>
     </section>
   );
 }
 
 function Cell({ entry }: { entry: EcosystemEntry }) {
-  const cellClass = cn(
-    'group flex h-20 items-center justify-center rounded-card border border-border-soft bg-surface/40 px-4',
-    'text-muted-2 font-mono text-sm tracking-wider transition',
-    'hover:text-foreground hover:border-border hover:bg-surface',
-    'focus-visible:text-foreground focus-visible:border-border focus-visible:bg-surface',
+  const className = cn(
+    'hover:text-foreground block py-4 transition-colors',
   );
-  const inner = <span className="select-none">{entry.display}</span>;
-
   if (entry.href) {
     const isExternal = /^https?:\/\//.test(entry.href);
     if (isExternal) {
@@ -63,18 +72,18 @@ function Cell({ entry }: { entry: EcosystemEntry }) {
           href={entry.href}
           target="_blank"
           rel="noopener noreferrer"
-          className={cellClass}
+          className={className}
           aria-label={entry.display}
         >
-          {inner}
+          {entry.display}
         </a>
       );
     }
     return (
-      <Link href={entry.href} className={cellClass} aria-label={entry.display}>
-        {inner}
+      <Link href={entry.href} className={className} aria-label={entry.display}>
+        {entry.display}
       </Link>
     );
   }
-  return <div className={cellClass}>{inner}</div>;
+  return <div className={className}>{entry.display}</div>;
 }
