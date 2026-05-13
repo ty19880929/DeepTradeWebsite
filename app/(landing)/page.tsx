@@ -7,6 +7,7 @@ import { FeatureBlock } from '@/components/landing/FeatureBlock';
 import { Footer } from '@/components/landing/Footer';
 import { Hero } from '@/components/landing/Hero';
 import { Navbar } from '@/components/landing/Navbar';
+import { PluginsBlock } from '@/components/landing/PluginsBlock';
 import { buildMetadata } from '@/lib/seo';
 
 export const metadata: Metadata = buildMetadata({
@@ -44,6 +45,16 @@ const HERO_DATA: {
       tag: { text: '[PLUGINS]', tone: 'green' },
     },
     { label: 'DOCS', kind: 'link', value: '/docs' },
+  ],
+};
+
+const PLUGINS_DATA = {
+  description:
+    '框架本体是纯透传 runtime；策略、数据采集、通知渠道全部以独立插件包发布，通过 CLI 一键安装。',
+  plugins: [
+    { name: 'limit-up-board', desc: 'A 股涨停板筛选与分析。' },
+    { name: 'volume-anomaly', desc: '成交量异动实时检测。' },
+    { name: 'stdout-channel', desc: '基础终端输出渠道。' },
   ],
 };
 
@@ -208,16 +219,12 @@ export default function LandingPage() {
           }
         />
 
-        <section className="border-border-soft border-t py-section">
-          <div className="mx-auto max-w-3xl px-6">
-            <h2 className="text-foreground text-section text-center font-bold tracking-tight">
-              常见问题
-            </h2>
-            <div className="mt-12">
-              <FaqAccordion items={FAQS} />
-            </div>
-          </div>
-        </section>
+        <PluginsBlock {...PLUGINS_DATA} />
+
+        <div className="text-foreground mt-section mb-4 font-bold">
+          FREQUENTLY ASKED QUESTIONS
+        </div>
+        <FaqAccordion items={FAQS} />
       </main>
       <Footer />
     </>
