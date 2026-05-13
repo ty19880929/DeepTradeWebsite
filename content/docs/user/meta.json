@@ -4,6 +4,7 @@
   "pages": [
     "index",
     "---快速上手---",
+    "install-python",
     "install",
     "init",
     "---全局配置---",
