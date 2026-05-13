@@ -1,36 +1,101 @@
 import Link from 'next/link';
-import { ArrowRight } from 'lucide-react';
+import { ArrowUpRight } from 'lucide-react';
 
 import { CopyableCommand } from '@/components/landing/CopyableCommand';
 
-interface HeroProps {
-  installCommand: string;
-  docsHref: string;
+type Tone = 'green' | 'yellow';
+
+interface HeroTag {
+  text: string;
+  tone: Tone;
 }
 
-export function Hero({ installCommand, docsHref }: HeroProps) {
-  return (
-    <section className="relative flex min-h-[80vh] flex-col items-center justify-center px-6 py-24 text-center">
-      <h1 className="text-hero text-foreground max-w-4xl text-balance font-extrabold tracking-tight">
-        本地运行的 A 股选股 CLI 框架
-      </h1>
-      <p className="text-muted mx-auto mt-8 max-w-2xl text-balance text-base leading-7 sm:text-lg">
-        tushare 行情 + 兼容 OpenAI LLM + DuckDB 单机仓库 + 纯透传式插件机制。你的数据，你的策略，全在本地。
-      </p>
+interface HeroAction {
+  label: string;
+  kind: 'command' | 'link';
+  value: string;
+  tag?: HeroTag;
+}
 
-      <div className="mt-10">
-        <CopyableCommand command={installCommand} />
+interface HeroProps {
+  statement: string;
+  statementEn?: string;
+  pillars: [string, string, string, string];
+  actions: HeroAction[];
+}
+
+const TONE_CLASS: Record<Tone, string> = {
+  green: 'text-accent',
+  yellow: 'text-accent-yellow',
+};
+
+function ActionRow({ action }: { action: HeroAction }) {
+  const isExternal =
+    action.kind === 'link' && /^https?:\/\//.test(action.value);
+
+  const label = (
+    <div className="text-muted mb-2 w-48 md:mb-0">
+      {action.label}
+      {action.tag && (
+        <span className={`ml-2 ${TONE_CLASS[action.tag.tone]}`}>
+          {action.tag.text}
+        </span>
+      )}
+    </div>
+  );
+
+  return (
+    <div className="flex flex-col justify-between p-4 transition-colors hover:bg-white/[0.02] md:flex-row md:items-center md:px-6">
+      {label}
+      {action.kind === 'command' ? (
+        <CopyableCommand command={action.value} prefix="" inline />
+      ) : (
+        <Link
+          href={action.value}
+          {...(isExternal
+            ? { target: '_blank', rel: 'noopener noreferrer' }
+            : {})}
+          className="text-link hover:text-foreground inline-flex items-center gap-3 font-mono text-sm tracking-normal lowercase transition-colors"
+        >
+          {action.value}
+          <ArrowUpRight className="text-muted h-3.5 w-3.5" aria-hidden="true" />
+        </Link>
+      )}
+    </div>
+  );
+}
+
+export function Hero({ statement, statementEn, pillars, actions }: HeroProps) {
+  return (
+    <section className="border-border border">
+      {/* Statement —— page H1，纵使外层 main 是 uppercase，statement 自身保留 */}
+      <div className="border-border flex h-48 flex-col items-center justify-center gap-2 border-b px-6 text-center">
+        <h1 className="text-foreground text-base font-medium tracking-[0.15em] md:text-lg">
+          {statement}
+        </h1>
+        {statementEn && (
+          <p className="text-muted text-xs tracking-widest">{statementEn}</p>
+        )}
       </div>
 
-      <Link
-        href={docsHref}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="text-link hover:text-foreground mt-6 inline-flex items-center gap-2 text-sm transition-colors"
-      >
-        阅读文档
-        <ArrowRight className="h-4 w-4" aria-hidden="true" />
-      </Link>
+      {/* 4 Pillars */}
+      <div className="divide-border border-border text-muted grid grid-cols-2 divide-y border-b text-center md:grid-cols-4 md:divide-x md:divide-y-0">
+        {pillars.map((pillar) => (
+          <div
+            key={pillar}
+            className="hover:text-foreground cursor-default py-4 transition-colors"
+          >
+            {pillar}
+          </div>
+        ))}
+      </div>
+
+      {/* Action Rows */}
+      <div className="divide-border divide-y">
+        {actions.map((action) => (
+          <ActionRow key={action.label} action={action} />
+        ))}
+      </div>
     </section>
   );
 }

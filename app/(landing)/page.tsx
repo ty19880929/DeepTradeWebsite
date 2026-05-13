@@ -17,6 +17,38 @@ export const metadata: Metadata = buildMetadata({
   ogKind: 'default',
 });
 
+const HERO_DATA: {
+  statement: string;
+  statementEn: string;
+  pillars: [string, string, string, string];
+  actions: {
+    label: string;
+    kind: 'command' | 'link';
+    value: string;
+    tag?: { text: string; tone: 'green' | 'yellow' };
+  }[];
+} = {
+  statement: '本地运行的 A 股选股 CLI 框架',
+  statementEn: 'A LOCAL-FIRST A-SHARE CLI FRAMEWORK',
+  pillars: ['LOCAL ONLY', 'NO DOCKER', 'MULTI LLM', 'PLUGIN DRIVEN'],
+  actions: [
+    { label: 'GET STARTED', kind: 'command', value: 'pipx install deeptrade-quant' },
+    {
+      label: 'GITHUB',
+      kind: 'link',
+      value: 'https://github.com/ty19880929/DeepTrade',
+      tag: { text: '[CORE]', tone: 'yellow' },
+    },
+    {
+      label: 'REGISTRY',
+      kind: 'link',
+      value: 'https://github.com/ty19880929/DeepTradePluginOfficial',
+      tag: { text: '[PLUGINS]', tone: 'green' },
+    },
+    { label: 'DOCS', kind: 'link', value: '/docs' },
+  ],
+};
+
 const ECOSYSTEM = [
   { id: 'deepseek', display: 'DeepSeek', href: 'https://www.deepseek.com' },
   { id: 'qwen', display: 'Qwen', href: 'https://qwen.ai' },
@@ -163,8 +195,13 @@ export default function LandingPage() {
         dangerouslySetInnerHTML={{ __html: JSON.stringify(STRUCTURED_DATA) }}
       />
       <Navbar />
-      <main>
-        <Hero installCommand="pipx install deeptrade-quant" docsHref="/docs" />
+      <main className="mx-auto max-w-4xl px-6 py-24 text-xs tracking-widest uppercase">
+        {/* Pixel-font wordmark —— next/font 注入的 VT323 子集 ~10KB；落地页独占。 */}
+        <div className="text-foreground font-pixel mb-8 text-2xl tracking-[0.2em]">
+          DEEPTRADE
+        </div>
+
+        <Hero {...HERO_DATA} />
 
         <EcosystemGrid
           title="无缝集成你熟悉的基建与大模型"
