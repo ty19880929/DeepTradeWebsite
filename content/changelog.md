@@ -2,6 +2,138 @@
 
 All notable changes to DeepTrade. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and SemVer.
 
+## [v0.4.2] — 2026-05-12 — Database 构造自动迁移 + DEEPTRADE_DEBUG=1 显示堆栈
+
+定位到一个用户报错：升级到 0.4.1 后第一次跑 `deeptrade limit-up-board lgb train ...` 直接报 `✘ TypeError: list indices must be integers or slices, not str`。链路追到 `TushareClient._restore_cached_frame` —— 0.4.1 改用 `{"version","schema","data"}` 包裹格式读取，但旧裸数组的缓存行没被清掉。根因不是缓存代码本身，而是迁移触发链路：`apply_core_migrations` 只在 `deeptrade db init` / `db upgrade` 显式调用，包升级后用户不手动跑就一直拿不到 `20260512_001_drop_legacy_tushare_cache.sql` 的清空动作。同时报错只有一行无堆栈，定位也很慢——这是双层 swallow（插件 + 框架都没渲染 traceback）。
+
+### Changed
+
+- `deeptrade/core/db.py::Database.__init__` 新增 `auto_migrate: bool = True` kwarg；构造时若未关闭（且 `DEEPTRADE_SKIP_AUTO_MIGRATE` 未置位）就自动调一次 `apply_core_migrations(self)`。任何打开 DB 的代码路径（CLI 插件分发、PluginManager、未来的 SDK 调用）都因此跟进 schema，包升级后无需手动 `db upgrade` 即可避开 0.4.1 那种"新读路径碰旧数据"的尴尬。
+- `deeptrade/cli.py` 的 `init` / `db init` / `db upgrade` 显式传 `auto_migrate=False`，自己调 `apply_core_migrations` 收集"本次新跑了哪些版本"以打印 `✔ Schema applied: <version>` 行；其他命令走默认 auto-migrate 路径。
+- `deeptrade/cli.py::_dispatch` 给插件 `dispatch()` 包了一层兜底：捕获 `BaseException`（放过 `SystemExit` / `KeyboardInterrupt`）后用 `render_exception` 渲染、按 `typer.Exit(1)` 传播。已经自己 catch 的插件不受影响；不 catch 的插件也能在框架层看到一致的输出格式。
+
+### Added
+
+- `deeptrade/plugins_api/errors.py`：`render_exception(exc, *, header_glyph="✘")` 与 `debug_enabled()`。约定环境变量 `DEEPTRADE_DEBUG=1`（接受 `1` / `true` / `yes` / `on`，大小写不敏感）——开启时输出完整 `traceback.format_exception` 文本（自动包含 `__cause__` 链与 exception group），否则维持 `✘ {ExcType}: {msg}` 一行。两者均不带尾部换行，调用方自加。从 `plugins_api/__init__.py` 重导出。
+- 逃生通道 `DEEPTRADE_SKIP_AUTO_MIGRATE=1`：当一次失败的迁移把所有 CLI 命令都堵住时，置位该变量绕过 auto-migrate 还原现场。文档位于 README troubleshooting 段（非主流程）。
+- `tests/core/test_db.py`：5 个新用例覆盖 auto-migrate 行为——新建 DB 自动跑迁移、`auto_migrate=False` 跳过、`DEEPTRADE_SKIP_AUTO_MIGRATE=1` 跳过、迁移失败硬上抛、**预置旧裸数组 `tushare_cache_blob` 行 → 再开 DB 必须被 0.4.1 的 drop 迁移清掉**（本次故事的回归锁）。
+- `tests/plugins_api/test_errors.py`：默认模式一行、`DEEPTRADE_DEBUG=1` 含 `Traceback` + 链式 `__cause__`、自定义 glyph、`0` 视为关闭、`debug_enabled` env 反映。
+
+### Migration notes
+
+- **用户侧零动作**：从 0.4.1 升上来的用户下一次跑任何 `deeptrade <...>` 命令时，`Database()` 都会自动应用 `20260512_001_drop_legacy_tushare_cache.sql`，TypeError 自愈。仍想留旧缓存（不推荐）的用户可用 `DEEPTRADE_SKIP_AUTO_MIGRATE=1 deeptrade ...` 临时绕过。
+- **插件作者**：仍可保留自己的 `except Exception` 兜底；推荐改用 `from deeptrade.plugins_api import render_exception`，写成 `sys.stderr.write(render_exception(e) + "\n")` 即可让 `DEEPTRADE_DEBUG=1` 透传栈信息。`api_version` 不动（"1"）；旧插件不调新工具也照常工作。
+- **测试夹具变更**：`tests/core/test_db.py::fresh_db` 改用 `auto_migrate=False` 以保留"未迁移"语义；其余 `apply_core_migrations(fresh_db)` 用例无须改动（幂等）。
+
+## [v0.4.1] — 2026-05-12 — Tushare 缓存 dtype 还原 + 消除 pandas FutureWarning
+
+插件在缓存命中路径上反馈 pandas 2.2+ 抛出 `FutureWarning: The behavior of 'to_datetime' with 'unit' when parsing strings is deprecated`。根因在框架侧 `TushareClient._read_cached`：`pd.read_json(..., orient="records")` 默认 `convert_dates=True`，按列名启发式（含 `date / _at / _time / timestamp / modified`）调 `pd.to_datetime(values, errors='ignore', unit='ms')`，tushare 列名几乎全部命中，每次缓存读取都会触发警告；更危险的是 pandas 未来版本会静默改变 string+`unit` 的语义。
+
+### Changed
+
+- `deeptrade/core/tushare_client.py::TushareClient._write_cached` / `_read_cached` 改用 `{"version":1, "schema":{col:dtype_str}, "data":[...records...]}` 的包裹格式存取缓存；读取走 `json.loads + DataFrame.from_records + _restore_cached_frame`，按 schema 显式还原 dtype（`datetime64[*]` → `pd.to_datetime`；非 `object` 数值/布尔列 → `astype`；`object` 跳过）。彻底绕开 `pd.read_json` 的列名启发式，根因消除。
+- 框架不引入任何 tushare 业务字段名清单——`schema` 字典从 `df.dtypes.astype(str).to_dict()` 自动派生，保持"框架不持有业务知识"的原则。
+- 依赖瘦身：删除 `import io`（旧实现唯一用途）。
+
+### Added
+
+- `deeptrade/core/migrations/core/20260512_001_drop_legacy_tushare_cache.sql`：升级时一次性 `DROP TABLE IF EXISTS tushare_cache_blob`；旧裸数组格式的缓存条目与新读取路径不兼容，惰性建表 `_ensure_cache_table` 会在下次写入时重建。
+- `tests/core/test_tushare_client.py::test_cache_payload_round_trip_preserves_dtypes`：以 `trade_date(YYYYMMDD字符串)` + `ts_code(object)` + `close(float64)` + `vol(int64)` + `is_st(bool)` + `ann_dt(datetime64[ns])` 全字段 round-trip，`warnings.simplefilter("error", FutureWarning)` 把 warning 当错误抓，锁住回归。
+
+### Migration notes
+
+- **缓存清空一次**：升级到 0.4.1 后第一次 `apply_core_migrations` 会执行 `DROP TABLE IF EXISTS tushare_cache_blob`；下一次按 `trade_date` 拉取的 API 会走一次远程，之后正常命中新格式缓存。`tushare_sync_state` 不受影响（仍记录 status=ok），但 `_cache_hit` 在缓存表不存在时已会判为 miss，行为安全。
+- **插件无需改动**：`TushareClient.call(...)` 返回的 DataFrame dtype 与首次远程拉取时一致——之前依赖 `.dt` 访问器或显式 dtype 的插件代码无须调整。
+
+## [v0.4.0] — 2026-05-12 — 插件级依赖管理 + 框架依赖瘦身
+
+两项主线变更合并发布：
+
+1. **插件可以声明并由框架自动安装自己的 Python 依赖**。`deeptrade_plugin.yaml::dependencies` 接受 PEP 508 specifier；`plugin install / upgrade` 期间走 `uv pip install` → `python -m pip install` 两级回退，已装且满足跳过，不满足硬拒绝并归因到具体冲突方。设计文档：`docs/DeepTrade/plugin_dependency_management_design.md`（仓库外）。
+2. **框架主依赖瘦身**：`pandas` / `tushare` 不再是 framework 的 `Requires-Dist`，仅作为 `optional-dependencies.plugin-runtime` / `dev` extras 存在。`deeptrade.core.tushare_client.TushareClient` 这一专为插件准备的 wrapper 行为不变，但其运行时依赖现在由插件自己声明。受影响的插件清单与改造指引见 `docs/DeepTrade/plugin_required_dependencies.md`（仓库外）。
+
+### Added
+
+- `PluginMetadata.dependencies: list[str]`（PEP 508 specifier；`extra="forbid"` 通过默认空列表向后兼容旧 yaml）；Pydantic 校验拒绝非法 spec、VCS/URL 形式、重名包（大小写无关）。
+- `deeptrade/core/dep_installer.py`：`parse_specs / plan_install / detect_installer / run_install`；installer 探测优先 `uv`（带 `--python <sys.executable>` 强制装入框架解释器）→ 回退 `python -m pip`；环境变量 `DEEPTRADE_DEP_INSTALL_TIMEOUT` 覆盖默认 300s 超时；marker 不匹配的 requirement 自动跳过。
+- `PluginManager._handle_dependencies` / `_build_dep_ownership`：在 `install` / `upgrade` 的 `copytree` 之后、migrations 事务之前解析并安装 deps；冲突错误信息归因到"框架核心依赖"或具体 `plugin <id>`（反查既装插件的 `metadata_yaml`）。
+- `plugin install` / `plugin upgrade` CLI 新增 `--no-deps`、`--reinstall-deps`；`summarize_for_install` 增 `dependencies` 行；`--no-deps` 启用时摘要区会显式提示。
+- `pyproject.toml::optional-dependencies.plugin-runtime` extras：把 `tushare>=1.4` / `pandas>=2.2` 显式收集到这个组，便于本地通过 `uv sync --extra plugin-runtime` 调试 TushareClient。
+- `tests/core/test_plugin_dependencies.py`：29 个用例覆盖元数据校验、planning、installer 探测、PluginManager 集成（安装 / 跳过 / 冲突 / 失败清理 / `--no-deps` / `--reinstall-deps` / 归因到其他插件）、upgrade 行为、CLI 摘要 + flag 透传。
+
+### Changed
+
+- `pyproject.toml::dependencies`：移除 `tushare>=1.4` 与 `pandas>=2.2`；其余 11 条框架直接使用的依赖（typer / questionary / rich / duckdb / openai / pydantic / tenacity / pyyaml / keyring / click / packaging）保持不变。
+- `pyproject.toml::optional-dependencies.dev`：补入 `tushare>=1.4` / `pandas>=2.2`，使 `uv sync --all-extras` 仍能跑通 `tests/core/test_tushare_client.py` 等触及 wrapper 的测试。
+- `deeptrade/__init__.py::__version__` → `0.4.0`；`pyproject.toml::project.version` → `0.4.0`（两处同步更新，遵 CLAUDE.md 发版流程）。
+
+### Migration notes
+
+- **框架瘦身的兼容性边界**：升级到 0.4.0 框架但**沿用旧版本插件**的用户，如果之前是用 `pip install deeptrade-quant` 一并装下了 pandas / tushare，环境里这两个库仍在，旧插件依然能跑。但**重新部署 / 新建虚拟环境**时，如果插件 yaml 没声明 `pandas` / `tushare`，运行期会以 `ModuleNotFoundError` 暴露——这就是新的"插件应该自己声明依赖"的预期行为。
+- **官方插件改造**：`DeepTradePluginOfficial` 仓中的 `limit_up_board` / `volume_anomaly` 等策略需要把 `pandas>=2.2` / `tushare>=1.4` 写进自家 `deeptrade_plugin.yaml::dependencies`。具体指引见 `plugin_required_dependencies.md`。
+- **离线 / 私有源用户**：本版本不支持自定义 `index_url`；如需禁用网络安装，用 `deeptrade plugin install <source> --no-deps` 跳过 dep 安装步骤，自行 `pip install` 准备好环境。
+- **回滚不卸 deps**：dep 安装成功但后续 migrations / `validate_static` 失败时，已装的依赖**不会被反向卸载**——共享依赖风险下"装哪些卸哪些"会误伤其他插件。设计文档 §4.5 有详细说明。
+
+### Out of scope (recorded for follow-up)
+
+- `deeptrade.core.tushare_client` 仍位于框架代码树；下一步可考虑把它整体迁出框架（独立 PyPI 包或新的 `type=service` 插件类型），届时框架 wheel 完全不带 tushare 相关代码。
+- 不引入 `requirements.lock` 风格的依赖锁定；当前每次 install 都按 specifier 实时解析。
+- 不引入企业级 `index_url` / 私有 PyPI 源；v1 直接走 PyPI 默认源。
+
+## [v0.3.1] — 2026-05-11 — Tushare 传输层韧性修复
+
+`TushareSDKTransport.call` 用字符串关键字判断异常类型，长跑训练下 httpx 的 `RemoteProtocolError("Response ended prematurely")` 等传输层瞬断错误被错归为不可重试的 `TushareError`，绕过了 tenacity 重试白名单和 5xx → 缓存兜底链路，导致打板策略 lightgbm 训练（单轮 3000+ 次 Tushare 调用）频繁因网络抖动终止。本版本重写分类器并扩展重试策略。设计文档见 `docs/DeepTrade/tushare_transport_resilience_plan.md`（仓库外）。
+
+### Added
+
+- `TushareTransportError`（`TushareServerError` 的子类）：传输层瞬态错误的专门异常类型；自动复用现有重试白名单与 5xx 缓存兜底路径，调用方零改动。
+- `_classify_tushare_exception` / `_is_transient_transport_error` / `_extract_http_status` 三个模块级辅助函数，实现"按异常类型 → HTTP 状态码 → 字符串关键字"的三级分类，类型识别覆盖 httpx / requests / urllib3 / stdlib 三栈。
+- `app_config.tushare_max_retries`（默认 7，范围 1-20，dotted key `tushare.max_retries`）：tenacity stop_after_attempt 的最大尝试次数；从原来硬编码 5 提到 7。
+- `TushareClient.__init__` 新增可选 `max_retries: int = 7` 参数。
+- `tests/core/test_tushare_classifier.py`：分类器全套单测（37 个用例），含 "Response ended prematurely" 回归保护。
+- `tests/core/test_tushare_retry_r1.py`：硬约束 R1 回归测试——每次 tenacity 重试都必须重新经过 `_TokenBucket.acquire()`；任何把 `bucket.acquire()` 移出 `_do_fetch` 的重构都会被这个测试拦下。
+
+### Changed
+
+- `TushareSDKTransport.call`：原 `except Exception` 中的字符串匹配块全部替换为对 `_classify_tushare_exception` 的调用；不再有 `"5" in msg[:3]` 这种 in 检查的 bug；未识别的异常默认归类为 `TushareTransportError`（可重试），而非历史的 `TushareError`（终态）——这是核心设计反转，意图是远程网络服务的"未知错"绝大多数是瞬态。
+- `TushareClient._fetch_with_retries`：从 `@retry` 装饰器形式改为显式 `Retrying(...)( _do_fetch, ...)` 调用，便于通过 `__init__` 注入 `max_retries`；函数体拆为 `_do_fetch`，`self._bucket.acquire()` 仍是 `_do_fetch` 的第一行——见 `__init__` 中的 R1 注释。
+- 重试退避策略：`wait_exponential(multiplier=1, min=1, max=15)` → `wait_exponential_jitter(initial=1, max=30, jitter=2)`，加 jitter 散开并发重试的"羊群效应"；`stop_after_attempt(5)` → `stop_after_attempt(max_retries)`（默认 7），最坏等待预算从 ~30s 抬到 ~70s。
+- Tushare 限流文案识别扩展：除 "频率"/"限流"/"rate"/"429" 外，新增对 "每分钟…次"（如 "抱歉，您每分钟最多访问该接口500次"）的匹配。
+- `tests/core/test_tushare_client.py` 中 4 处 `monkeypatch.setattr(TushareClient._fetch_with_retries.retry, "sleep", ...)` 改为 `monkeypatch.setattr(cli._retrying, "sleep", ...)`，配合 `Retrying` 实例化下放到 `__init__`。
+- `deeptrade/__init__.py`：版本 bump 至 `0.3.1`。
+
+### Out of scope (recorded for follow-up)
+
+- `_TokenBucket` 只 decay 不 recover：撞过几次 429 后 rps 单调下降到 0.1，`TushareClient` 实例生命周期内不自愈。lub 训练每轮新建 client 所以单轮内不至于雪崩，但跨长跑场景需在后续版本治理。
+- plugin 侧 `collect_training_window` 缺 per-day try/except、缺中间检查点——属插件韧性，不在框架范围。
+
+## [v0.3.0] — 2026-05-11 — 移除 channel 插件类型 + 内置 notifier
+
+本版本移除 `channel` 插件类型与框架内置的 notifier 链。IM 推送在实测中需要登录、轮询、发送多步流程，插件一次性 `dispatch(argv)` 的生命周期与之不匹配，整体能力将以框架级 ChatGateway 模块的形式重做（**本版本不含 ChatGateway 实现**，仅完成清理）。
+
+### Removed
+
+- `deeptrade/plugins_api/channel.py`（`ChannelPlugin` Protocol）
+- `deeptrade/plugins_api/notify.py`（`NotificationPayload` / `NotificationSection` / `NotificationItem`）
+- `deeptrade/core/notifier.py`（`NoopNotifier` / `MultiplexNotifier` / `AsyncDispatchNotifier` / `build_notifier` / `notify` / `notification_session`）
+- `tests/core/test_notifier.py` / `tests/plugins_api/test_notify.py` 整文件
+- `tests/plugins_api/test_protocol.py` 中 `ChannelPlugin` 相关 case
+- `deeptrade.notify` / `deeptrade.notification_session` 顶层导出
+
+### Changed
+
+- `PluginMetadata.type` 收窄为 `Literal["strategy"]`（字段保留，便于未来扩展新 plugin 类型）。
+- `apply_core_migrations` 新增 v0.3.0 数据迁移 `migrate_purge_non_strategy_plugins`：启动时清理 `plugins.type != 'strategy'` 的历史记录、`plugin_tables` / `plugin_schema_migrations` 关联行，并删除对应 install 目录。该迁移必须先于 `PluginManager.list_all()` 执行，否则旧 `channel` 行会触发 Pydantic 校验失败。
+- `deeptrade/__init__.py`：版本 bump 至 `0.3.0`，移除 notify 顶层 re-export。
+- README / CLAUDE.md：删除 channel / notify 段落与架构图相关条目；CLAUDE.md 新增"IM / notifications"短段说明能力暂缺、ChatGateway 是计划替代物。
+- 官方 strategy 插件 `limit_up_board` / `volume_anomaly` 的 `runtime.py`：删除未被调用的 `notify()` / `is_notify_enabled()` 方法与 `NotificationPayload` import（这些方法在实际业务流中无任何调用点）。
+
+### Migration notes
+
+- **从 0.2.x 升级**：`pipx upgrade deeptrade-quant`。下次任何 `deeptrade ...` 命令首次落地时，`apply_core_migrations` 会自动清理 `stdout-channel` 等 `type=channel` 的历史插件记录及其 install 目录（行为等价于 `deeptrade plugin uninstall <id> --purge`），并在日志输出对应警告。
+- 官方注册表（`DeepTradePluginOfficial`）的 `stdout-channel` 条目将在配套发版中下线，请勿再尝试安装。
+- 业务流仍需要 IM 推送的用户：临时方案是在策略代码内直接 `import httpx` 自行调用 webhook；统一的 ChatGateway 能力将在后续版本提供。
+
 ## [v0.2.0] — 2026-05-09 — 框架瘦身（builtin 插件物理移除）· PR-8 cutover
 
 本版本完成了框架与插件的物理解耦——`deeptrade-quant` wheel 不再携带任何插件代码。所有官方插件（`limit-up-board` / `volume-anomaly` / `stdout-channel`）必须通过 `deeptrade plugin install <短名>` 从注册表安装。
