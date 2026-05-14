@@ -4,7 +4,7 @@
 
 [DeepTrade](https://github.com/ty19880929/DeepTrade) 是一个**本地运行的 A 股选股 CLI 框架**。融合 tushare 行情、兼容 OpenAI 的多种 LLM (DeepSeek, Qwen, Kimi 等)、DuckDB 单机数据仓库与纯透传式插件机制。
 
-- 🌐 在线访问：`https://deeptrade.tiey.ai`（部署中）
+- 🌐 在线访问：[deeptrade.tiey.ai](https://deeptrade.tiey.ai)
 - 📦 框架仓库：[ty19880929/DeepTrade](https://github.com/ty19880929/DeepTrade)
 - 🧩 插件注册表：[ty19880929/DeepTradePluginOfficial](https://github.com/ty19880929/DeepTradePluginOfficial)
 
@@ -26,10 +26,10 @@
 | **运行时** | Node.js ≥ 20.11 LTS |
 | **包管理** | pnpm ≥ 10 |
 | **框架** | Next.js 16 (App Router + RSC) |
-| **文档** | Fumadocs UI + Fumadocs MDX（内置 Orama 中文搜索） |
-| **样式** | Tailwind CSS v4（CSS-first `@theme`） |
-| **字体** | `next/font/google` 优化的 Inter + JetBrains Mono 自托管字体 |
-| **部署托管** | Vercel（Production = main 自动部署，Preview = PR） |
+| **UI 库** | React 19 + Radix UI |
+| **文档引擎** | Fumadocs (UI + MDX + Orama 中文搜索) |
+| **样式** | Tailwind CSS v4 (CSS-first `@theme`) |
+| **部署托管** | Vercel (Production 自动化流水线) |
 
 ## 💻 本地开发指南
 
@@ -41,26 +41,33 @@ pnpm install
 pnpm dev
 ```
 
-**其他常用脚本：**
+**常用脚本：**
 
-```bash
-pnpm build        # 生产构建（Next.js 打包）
-pnpm start        # 启动生产服务器
-pnpm lint         # 执行 ESLint 静态检查
-pnpm typecheck    # 执行 TypeScript 类型检查 (tsc --noEmit)
-pnpm format       # 执行 Prettier 格式化写入
-```
+- `pnpm build`: 执行 SSG 静态构建
+- `pnpm lint`: ESLint 静态检查
+- `pnpm typecheck`: TypeScript 类型检查
+- `pnpm format`: 代码风格格式化
+- `pnpm sync:changelog`: 手动触发主仓更新日志同步
+- `pnpm verify:content`: 校验本地文档与 Fallback 数据一致性
 
 ## 🗺️ 路由地图
 
-| 页面路径 | 模块说明 | 状态/Milestone |
+| 页面路径 | 模块说明 | 状态 |
 |---|---|---|
-| `/` | **落地页** (产品特性、生态展示) | 已完成 (M2) |
-| `/docs` | 文档总览与入口 | 持续迭代 (M3/M4) |
-| `/docs/user/*` | 用户手册 (使用、配置教程，约11篇) | 持续迭代 (M3) |
-| `/docs/developer/*` | 开发者手册 (架构、插件开发，约9篇) | 持续迭代 (M4) |
-| `/plugins` | **官方插件墙** (可用策略/插件展示) | 规划中 (M4) |
-| `/changelog` | **更新日志** (同步主仓发布记录) | 规划中 (M4) |
+| `/` | **落地页** (产品特性、生态展示) | 已上线 |
+| `/docs` | 文档总览与入口 | 持续更新 |
+| `/docs/user/*` | **用户手册** (使用、配置教程) | 已上线 |
+| `/docs/developer/*` | **开发者手册** (架构、插件开发) | 已上线 |
+| `/plugins` | **官方插件墙** (自动同步插件注册表) | 已上线 |
+| `/changelog` | **更新日志** (自动同步主仓发布记录) | 已上线 |
+
+## 🔄 自动化同步机制
+
+为了保持官网内容与主项目同步，项目内置了多项自动化任务：
+
+1. **更新日志同步** (`scripts/sync-changelog.mjs`): 构建期自动抓取 `DeepTrade` 主仓的 `CHANGELOG.md`。如果网络异常，则退化到本地 `content/changelog.md` 基线。
+2. **插件注册表同步** (`lib/registry.ts`): 实时/构建期抓取 `DeepTradePluginOfficial` 的插件列表，并通过 Zod 进行严格模式校验。
+3. **GitHub 数据增强**: 如果配置了 `GITHUB_TOKEN`，插件墙会自动显示对应仓库的 Stars 数量和最新 Release 标签。
 
 ## 🏗️ 架构与设计文档
 
@@ -68,16 +75,6 @@ pnpm format       # 执行 Prettier 格式化写入
 - `website_detailed_design.md` — 详细设计方案
 - `website_iteration_plan.md` — 迭代路线图与任务拆解 (M1-M5)
 - `openspec_design_tokens.md` — 视觉设计规范（Design Tokens）
-
-## ☁️ 部署说明 (Vercel)
-
-本项目使用 Vercel 进行自动化部署：
-
-1. 在 Vercel 后台 Import 仓库 `ty19880929/DeepTradeWebsite`。
-2. Framework Preset 保持默认 `Next.js`。
-3. **Install Command 修改为 `pnpm install --frozen-lockfile`**。
-4. 在 Project Settings → Environment Variables 中建议配置 `GITHUB_TOKEN` 用于缓解 GitHub API 限速。
-5. 自定义域名 `deeptrade.tiey.ai` 已在规划中。
 
 ## 📄 许可协议
 
