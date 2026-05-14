@@ -23,6 +23,7 @@ const HERO_DATA: {
     kind: 'command' | 'link';
     value: string;
     tag?: { text: string; tone: 'green' | 'yellow' };
+    forceNewTab?: boolean;
   }[];
 } = {
   statement: '本地运行的 A 股选股 CLI 框架',
@@ -42,7 +43,7 @@ const HERO_DATA: {
       value: 'https://github.com/ty19880929/DeepTradePluginOfficial',
       tag: { text: '[PLUGINS]', tone: 'green' },
     },
-    { label: 'DOCS', kind: 'link', value: '/docs' },
+    { label: 'DOCS', kind: 'link', value: '/docs', forceNewTab: true },
     { label: 'PLUGINS', kind: 'link', value: '/plugins' },
   ],
 };

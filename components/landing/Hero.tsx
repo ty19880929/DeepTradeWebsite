@@ -15,6 +15,7 @@ interface HeroAction {
   kind: 'command' | 'link';
   value: string;
   tag?: HeroTag;
+  forceNewTab?: boolean;
 }
 
 interface HeroProps {
@@ -32,6 +33,7 @@ const TONE_CLASS: Record<Tone, string> = {
 function ActionRow({ action }: { action: HeroAction }) {
   const isExternal =
     action.kind === 'link' && /^https?:\/\//.test(action.value);
+  const shouldOpenInNewTab = isExternal || action.forceNewTab;
 
   const label = (
     <div className="text-muted mb-2 w-48 md:mb-0">
@@ -52,7 +54,7 @@ function ActionRow({ action }: { action: HeroAction }) {
       ) : (
         <Link
           href={action.value}
-          {...(isExternal
+          {...(shouldOpenInNewTab
             ? { target: '_blank', rel: 'noopener noreferrer' }
             : {})}
           className="text-link hover:text-foreground inline-flex items-center gap-3 font-mono text-sm tracking-normal lowercase transition-colors"
