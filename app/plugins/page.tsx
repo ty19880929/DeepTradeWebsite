@@ -1,7 +1,5 @@
 import type { Metadata } from 'next';
 
-import { Footer } from '@/components/landing/Footer';
-import { Navbar } from '@/components/landing/Navbar';
 import { RegistryTable } from '@/components/plugins/RegistryTable';
 import { loadPluginRecords } from '@/lib/registry';
 import { buildMetadata } from '@/lib/seo';
@@ -56,7 +54,6 @@ export default async function PluginsPage() {
 
         <RegistryTable plugins={plugins} />
       </main>
-      <Footer />
     </div>
   );
 }
