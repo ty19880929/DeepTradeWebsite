@@ -43,6 +43,7 @@ const HERO_DATA: {
       tag: { text: '[PLUGINS]', tone: 'green' },
     },
     { label: 'DOCS', kind: 'link', value: '/docs' },
+    { label: 'PLUGINS', kind: 'link', value: '/plugins' },
   ],
 };
 
