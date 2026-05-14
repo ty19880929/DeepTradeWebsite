@@ -68,10 +68,10 @@ export function RegistryTable({ plugins }: RegistryTableProps) {
 
       <div className="flex flex-col">
         {/* Table Header */}
-        <div className="text-muted-2 hidden border border-border bg-surface/50 font-mono text-[10px] tracking-[0.2em] uppercase md:flex">
-          <div className="w-56 border-r border-border p-4">plugin_id / version</div>
-          <div className="flex-1 border-r border-border p-4">description / metadata</div>
-          <div className="w-72 p-4">installation command</div>
+        <div className="text-muted-2 hidden border border-border bg-surface/50 font-mono text-[10px] tracking-[0.2em] uppercase md:grid md:grid-cols-12">
+          <div className="col-span-4 border-r border-border p-4">plugin_id / version</div>
+          <div className="col-span-5 border-r border-border p-4">description / metadata</div>
+          <div className="col-span-3 p-4">links</div>
         </div>
 
         {/* Table Body */}
