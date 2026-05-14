@@ -20,7 +20,6 @@ export default async function PluginsPage() {
 
   return (
     <div className="bg-background text-foreground min-h-screen font-mono uppercase tracking-widest text-xs">
-      <Navbar />
       <main className="mx-auto max-w-6xl px-6 pt-24 pb-16">
         <header className="mb-16 border-l-2 border-accent pl-6">
           <div className="flex items-center justify-between">
