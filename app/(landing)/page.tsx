@@ -44,7 +44,7 @@ const HERO_DATA: {
       tag: { text: '[PLUGINS]', tone: 'green' },
     },
     { label: 'DOCS', kind: 'link', value: '/docs', forceNewTab: true },
-    { label: 'PLUGINS', kind: 'link', value: '/plugins' },
+    { label: 'PLUGINS', kind: 'link', value: '/plugins', forceNewTab: true },
   ],
 };
 
