@@ -3,7 +3,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { ExternalLink, Check } from 'lucide-react';
 import type { PluginRecord } from '@/lib/registry';
-import { cn } from '@/lib/utils';
 
 interface RegistryRowProps {
   plugin: PluginRecord;
@@ -57,7 +56,7 @@ export function RegistryRow({ plugin }: RegistryRowProps) {
           )}
         </div>
         <div className="text-muted-2 mt-1 font-mono text-[10px] tracking-widest uppercase">
-          {plugin.latestTag || 'v0.0.0'} · 2026-05-13
+          {plugin.latest_version?.split('/').pop() || plugin.latestTag || 'v0.0.0'} · 2026-05-22
         </div>
       </div>
 

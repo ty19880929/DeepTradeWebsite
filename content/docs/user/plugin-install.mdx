@@ -18,15 +18,17 @@ DeepTrade 的插件安装走**单一命令**：
 
 <CopyableCommand command="deeptrade plugin install limit-up-board" />
 
-框架去注册表查 `plugin_id == "limit-up-board"` 对应的 `repo` + `subdir`，然后 git clone 到临时目录再装。
+框架 v0.8+ 会去注册表查 `plugin_id == "limit-up-board"` 对应的 `repo` + `latest_version`，然后直接通过 **GitHub CDN (`codeload.github.com`)** 拉取对应的 tarball。
+
+<Callout type="info">
+**免 API 限流**：CDN 路径不消耗 GitHub API 配额。老版本（≤v0.7）会通过 GitHub Releases API 解析最新版本，在频繁安装时容易触发 60次/小时 的非认证请求限流。
+</Callout>
 
 </Step>
 <Step>
 
 ### Git 仓库 URL
-
-适合自有插件或非官方仓库：
-
+...
 <CopyableCommand command="deeptrade plugin install https://github.com/myuser/my-plugin.git" />
 
 也支持 SSH 形式：`git@github.com:user/repo.git`。
@@ -45,11 +47,16 @@ DeepTrade 的插件安装走**单一命令**：
 </Step>
 </Steps>
 
+## 自动化依赖管理 (v0.4+)
+
+框架支持插件级别的 Python 依赖自动安装。如果插件在 `deeptrade_plugin.yaml` 中声明了 `dependencies`（如 `lightgbm`, `pandas` 等），框架会在安装/升级期间自动调用 `uv pip install` (优先) 或 `pip install` 将其安装到当前环境。
+
+- `--no-deps`: 跳过依赖安装（适合离线环境或手动管理）。
+- `--reinstall-deps`: 强制重跑依赖安装程序（即使已满足版本要求）。
+
 ## 锁定版本：`--ref`
-
-来源是 Git 时（包括注册表短名，因为框架内部转 git）可以指定分支 / tag / sha：
-
-<CopyableCommand command="deeptrade plugin install limit-up-board --ref limit-up-board-v0.6.1" />
+...
+<CopyableCommand command="deeptrade plugin install limit-up-board --ref limit-up-board-v0.8.0" />
 
 <CopyableCommand command="deeptrade plugin install https://github.com/myuser/my-plugin.git --ref dev" />
 

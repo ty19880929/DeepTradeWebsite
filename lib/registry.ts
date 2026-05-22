@@ -8,24 +8,21 @@ import { z } from 'zod';
  * `.strict()` 让 Zod 在检测到未声明字段时直接抛错（schema 漂移立即发现，
  * 而不是无声漂移到生产）。
  */
-const RegistryEntrySchema = z
-  .object({
-    name: z.string().min(1),
-    type: z.enum(['strategy', 'channel']),
-    description: z.string().min(1),
-    repo: z.string().min(1),
-    subdir: z.string().min(1),
-    tag_prefix: z.string().min(1),
-    min_framework_version: z.string().min(1),
-  })
-  .strict();
+const RegistryEntrySchema = z.object({
+  name: z.string().min(1),
+  type: z.enum(['strategy', 'channel']),
+  description: z.string().min(1),
+  repo: z.string().min(1),
+  subdir: z.string().min(1),
+  tag_prefix: z.string().min(1),
+  min_framework_version: z.string().min(1),
+  latest_version: z.string().optional(),
+});
 
-const RegistrySchema = z
-  .object({
-    schema_version: z.literal(1),
-    plugins: z.record(z.string(), RegistryEntrySchema),
-  })
-  .strict();
+const RegistrySchema = z.object({
+  schema_version: z.literal(1),
+  plugins: z.record(z.string(), RegistryEntrySchema),
+});
 
 export type Registry = z.infer<typeof RegistrySchema>;
 export type RegistryEntry = z.infer<typeof RegistryEntrySchema>;

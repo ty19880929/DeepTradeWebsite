@@ -28,7 +28,7 @@ const HERO_DATA: {
 } = {
   statement: '本地运行的 A 股选股 CLI 框架',
   statementEn: 'A LOCAL-FIRST A-SHARE CLI FRAMEWORK',
-  pillars: ['LOCAL ONLY', 'NO DOCKER', 'MULTI LLM', 'PLUGIN DRIVEN'],
+  pillars: ['LOCAL ONLY', 'NO DOCKER', 'STREAMING LLM', 'PLUGIN DRIVEN'],
   actions: [
     { label: 'GET STARTED', kind: 'command', value: 'pipx install deeptrade-quant' },
     {
@@ -52,9 +52,9 @@ const PLUGINS_DATA = {
   description:
     '框架本体是纯透传 runtime；策略、数据采集、通知渠道全部以独立插件包发布，通过 CLI 一键安装。',
   plugins: [
-    { name: 'limit-up-board', desc: 'A 股涨停板筛选与分析。' },
-    { name: 'volume-anomaly', desc: '成交量异动实时检测。' },
-    { name: 'stdout-channel', desc: '基础终端输出渠道。' },
+    { name: 'limit-up-board', desc: '打板策略：双轮 LLM 漏斗 + LightGBM 连板概率评分。' },
+    { name: 'accumulation-probe-washout', desc: '主升浪策略：吸筹/试盘/洗盘链路 + 启动概率评分。' },
+    { name: 'checkmate', desc: '趋势跟踪策略：中期趋势跟踪 + ATR 动态风控。' },
   ],
 };
 
@@ -63,10 +63,10 @@ const PLUGINS_DATA = {
 const ECOSYSTEM = [
   { id: 'deepseek', display: 'DeepSeek', href: 'https://www.deepseek.com' },
   { id: 'qwen', display: 'Qwen', href: 'https://qwen.ai' },
-  { id: 'kimi', display: 'Kimi', href: 'https://www.moonshot.cn' },
+  { id: 'openai', display: 'OpenAI', href: 'https://openai.com' },
   { id: 'tushare', display: 'Tushare', href: 'https://tushare.pro' },
   { id: 'duckdb', display: 'DuckDB', href: 'https://duckdb.org' },
-  { id: 'python', display: 'Python 3.10+', href: 'https://www.python.org' },
+  { id: 'python', display: 'Python 3.11+', href: 'https://www.python.org' },
 ];
 
 const LLM_CONFIG_BEFORE = `{
@@ -112,7 +112,7 @@ const FAQS = [
         >
           {' '}官方注册表{' '}
         </a>
-        安装。`limit-up-board`、`volume-anomaly` 都是独立 PyPI 包。
+        安装。`limit-up-board`、`accumulation-probe-washout` 都是独立 PyPI 包。
       </>
     ),
   },
@@ -149,7 +149,7 @@ const STRUCTURED_DATA = {
     'tushare 行情 + 兼容 OpenAI LLM + DuckDB 单机仓库 + 纯透传式插件机制。本地运行的 A 股选股 CLI 框架。',
   url: 'https://deeptrade.tiey.ai',
   downloadUrl: 'https://pypi.org/project/deeptrade-quant/',
-  softwareVersion: '0.2.0',
+  softwareVersion: '0.9.1',
   license: 'https://opensource.org/licenses/MIT',
   codeRepository: 'https://github.com/ty19880929/DeepTrade',
   programmingLanguage: 'Python',
@@ -175,13 +175,14 @@ export default function LandingPage() {
         {/* FEATURES 分组：三个 FeatureBlock 共享同一顶部标签 */}
         <div className="text-foreground mt-section mb-4 font-bold">FEATURES</div>
         <FeatureBlock
-          title="SWITCH MODELS INSTANTLY, NO CODE CHANGES"
+          title="STREAMING LLM, NO MORE TIMEOUTS"
           summary={
             <>
-              <code className="text-foreground bg-surface px-1 font-mono text-sm">llm.providers</code>{' '}
-              是一个 JSON 字典，多个 OpenAI 兼容厂商并存。切默认 provider 只改一行。所有
-              LLM 调用强约束 Pydantic JSON mode + 禁用 tool/function call，把&ldquo;幻觉&rdquo;
-              压在结构化输出层而不是后处理。
+              框架 v0.9+ 全面采用{' '}
+              <code className="text-foreground bg-surface px-1 font-mono text-sm">streaming</code>{' '}
+              传输，彻底规避 Kimi K2.6 等 reasoning 模型长思考导致的网关超时。支持多 OpenAI
+              兼容厂商并存，所有 LLM 调用强约束 Pydantic JSON mode，把&ldquo;幻觉&rdquo;
+              压在结构化输出层。
             </>
           }
           visual={
