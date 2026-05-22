@@ -45,6 +45,7 @@ const HERO_DATA: {
     },
     { label: 'DOCS', kind: 'link', value: '/docs', forceNewTab: true },
     { label: 'PLUGINS', kind: 'link', value: '/plugins', forceNewTab: true },
+    { label: 'REPORTS', kind: 'link', value: '/reports', forceNewTab: true },
   ],
 };
 
