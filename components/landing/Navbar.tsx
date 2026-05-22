@@ -11,6 +11,7 @@ const NAV_LINKS = [
   { href: '/docs', label: '文档' },
   { href: '/plugins', label: '插件' },
   { href: '/changelog', label: '更新日志' },
+  { href: '/reports', label: '执行报告' },
 ];
 
 const SCROLL_THRESHOLD = 16;
