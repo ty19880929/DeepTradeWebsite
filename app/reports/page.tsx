@@ -85,13 +85,30 @@ export default async function ReportsPage() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-px bg-border border border-border">
                 {reportsByDate[date]
                   .sort((a, b) => {
-                    const getIdx = (path: string) => parseInt(path.split('/').pop()?.replace('.html', '') || '0');
+                    const getIdx = (path: string) => {
+                      const filename = path.split('/').pop() || '';
+                      const match = filename.match(/_(\d+)\.[^.]+$/) || filename.match(/^(\d+)\.[^.]+$/);
+                      return match ? parseInt(match[1], 10) : 0;
+                    };
                     return getIdx(a.pathname) - getIdx(b.pathname);
                   })
                   .map((report) => {
                     const parts = report.pathname.split('/');
                     const filename = parts[parts.length - 1];
-                    const index = filename.replace('.html', '');
+                    const nameWithoutExt = filename.replace(/\.[^/.]+$/, "");
+                    
+                    let displayName = nameWithoutExt;
+                    if (/^\d+$/.test(nameWithoutExt)) {
+                      const dateFormatted = date.replace(/-/g, '');
+                      displayName = `未知插件_${dateFormatted}_${nameWithoutExt}`;
+                    } else {
+                      try {
+                        displayName = decodeURIComponent(nameWithoutExt);
+                      } catch {
+                        // ignore decode error
+                      }
+                    }
+
                     const uploadTime = new Date(report.uploadedAt).toLocaleTimeString('zh-CN', { 
                       hour: '2-digit', 
                       minute: '2-digit',
@@ -106,7 +123,7 @@ export default async function ReportsPage() {
                         className="group block p-6 bg-background hover:bg-surface transition-colors"
                       >
                         <div className="flex justify-between items-center mb-2">
-                          <span className="font-bold">EXECUTION #{index}</span>
+                          <span className="font-bold">{displayName}</span>
                           <span className="text-muted group-hover:text-foreground transition-colors">→</span>
                         </div>
                         <div className="text-[10px] text-muted tracking-normal lowercase font-mono">

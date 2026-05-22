@@ -22,33 +22,47 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'No file provided' }, { status: 400 });
     }
 
-    if (!file.name.endsWith('.html')) {
-      return NextResponse.json({ error: 'Only HTML files are allowed' }, { status: 400 });
-    }
-
     const today = new Date().toISOString().split('T')[0];
     const prefix = `reports/${today}/`;
 
     // 1. 获取今日已上传的列表以确定序号 N
     const { blobs } = await list({ prefix });
-    
+
     const existingIndices = blobs
       .map(b => {
         const parts = b.pathname.split('/');
         const filename = parts[parts.length - 1];
-        const match = filename.match(/^(\d+)\.html$/);
+        // 匹配新格式 _n.ext 或老格式 n.ext
+        const match = filename.match(/_(\d+)\.[^.]+$/) || filename.match(/^(\d+)\.[^.]+$/);
         return match ? parseInt(match[1], 10) : 0;
       })
       .filter(n => n > 0);
-    
+
     const nextIndex = existingIndices.length > 0 ? Math.max(...existingIndices) + 1 : 1;
-    const pathname = `${prefix}${nextIndex}.html`;
+
+    const originalName = file.name || '';
+    const extension = originalName.includes('.') ? originalName.split('.').pop() : 'json';
+    
+    // 提取插件中文名
+    const pluginNameFromForm = formData.get('plugin_name') as string;
+    let pluginName = pluginNameFromForm;
+    if (!pluginName) {
+      pluginName = originalName.includes('.') ? originalName.slice(0, originalName.lastIndexOf('.')) : originalName;
+    }
+    // 移除可能存在的 _yyyyMMdd_n 后缀以防重复
+    pluginName = pluginName.replace(/_\d{8}_\d+$/, '');
+    if (!pluginName || /^\d+$/.test(pluginName)) {
+      pluginName = '未知插件';
+    }
+
+    const dateFormatted = today.replace(/-/g, '');
+    const finalFilename = `${pluginName}_${dateFormatted}_${nextIndex}.${extension}`;
+    const pathname = `${prefix}${finalFilename}`;
 
     // 2. 上传至 Vercel Blob
     const blob = await put(pathname, file, {
       access: 'public',
-      contentType: 'text/html',
-      // 允许浏览器直接预览而不是触发下载
+      contentType: file.type || (extension === 'json' ? 'application/json' : 'text/html'),      // 允许浏览器直接预览而不是触发下载
       addRandomSuffix: false, 
     });
 
