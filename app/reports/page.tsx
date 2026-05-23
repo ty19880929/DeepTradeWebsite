@@ -85,12 +85,8 @@ export default async function ReportsPage() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-px bg-border border border-border">
                 {reportsByDate[date]
                   .sort((a, b) => {
-                    const getIdx = (path: string) => {
-                      const filename = path.split('/').pop() || '';
-                      const match = filename.match(/_(\d+)\.[^.]+$/) || filename.match(/^(\d+)\.[^.]+$/);
-                      return match ? parseInt(match[1], 10) : 0;
-                    };
-                    return getIdx(a.pathname) - getIdx(b.pathname);
+                    // 由于可能不再有执行序号，统一按上传时间正序排序
+                    return new Date(a.uploadedAt).getTime() - new Date(b.uploadedAt).getTime();
                   })
                   .map((report) => {
                     const parts = report.pathname.split('/');
@@ -98,6 +94,7 @@ export default async function ReportsPage() {
                     const nameWithoutExt = filename.replace(/\.[^/.]+$/, "");
                     
                     let displayName = nameWithoutExt;
+                    // 兼容旧数据的纯数字命名
                     if (/^\d+$/.test(nameWithoutExt)) {
                       const dateFormatted = date.replace(/-/g, '');
                       displayName = `未知插件_${dateFormatted}_${nameWithoutExt}`;
