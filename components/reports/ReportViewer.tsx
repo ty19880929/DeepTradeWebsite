@@ -70,9 +70,64 @@ interface PredictionCardData {
   reasonVsPeers: string | null;
 }
 
+interface MarketSnapshot {
+  limit_up_count: number;
+  limit_step_distribution: Record<string, number>;
+  limit_step_distribution_prev: Record<string, number>;
+  limit_step_trend: {
+    max_height: number;
+    max_height_prev: number;
+    high_board_delta: number;
+    total_limit_up_delta: number;
+    interpretation: string;
+  };
+  yesterday_failure_rate: {
+    trade_date_prev: string;
+    u_count: number;
+    z_count: number;
+    rate_pct: number;
+    interpretation: string;
+  };
+  yesterday_winners_today: {
+    trade_date_prev: string;
+    n_winners: number;
+    n_continued_today: number;
+    continuation_rate_pct: number;
+    n_negative_today: number;
+    avg_pct_chg_today: number;
+    interpretation: string;
+  };
+  candidates: Array<{
+    code: string;
+    name: string;
+    close: number;
+    float_mv: number;
+    theme: string;
+    lgb: { score: number | null; rank: string | null };
+  }>;
+}
+
+interface FilteringLog {
+  entered: number;
+  passed: number;
+  rejected: number;
+  thresholds: {
+    min_float_mv_yi: number;
+    max_float_mv_yi: number;
+    max_close_yuan: number;
+  };
+  rejectedItems: Array<{
+    code: string;
+    name: string;
+    float_mv: number;
+    close: number;
+    reason: string;
+  }>;
+}
+
 interface StrategyReportSchema {
   meta: ReportMeta;
-  marketSnapshot: unknown;
+  marketSnapshot: MarketSnapshot | null;
   scoreDistribution: {
     stats?: { n: number; min: number; p25: number; median: number; p75: number; max: number };
     histogram?: Array<{ range: string; count: number }>;
@@ -83,7 +138,7 @@ interface StrategyReportSchema {
     watchlist: PredictionCardData[];
     avoid: PredictionCardData[];
   };
-  filteringDetails: unknown;
+  filteringDetails: FilteringLog | null;
   _extras: Record<string, unknown>;
 }
 
