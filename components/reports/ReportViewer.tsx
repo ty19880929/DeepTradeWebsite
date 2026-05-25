@@ -358,6 +358,15 @@ export function ReportViewer({ data }: { data: StrategyReportSchema }) {
 
 // Subcomponents
 
+function getClsUrl(code: string) {
+  if (!code) return '#';
+  const parts = code.split('.');
+  if (parts.length === 2) {
+    return `https://www.cls.cn/stock?code=${parts[1].toUpperCase()}${parts[0]}`;
+  }
+  return `https://www.cls.cn/stock?code=${code}`;
+}
+
 function MetricCard({ label, value, valueClass = "text-slate-900" }: { label: string, value: string | number, valueClass?: string }) {
   return (
     <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm flex flex-col">
@@ -377,7 +386,15 @@ function ScreeningRow({ data }: { data: ScreeningItem }) {
         <td className="px-4 py-3 text-slate-400 font-mono text-xs">{data.rank}</td>
         <td className="px-4 py-3">
           <div className="font-mono text-xs text-slate-500">{data.code}</div>
-          <div className="font-medium text-slate-900">{data.name}</div>
+          <a 
+            href={getClsUrl(data.code)}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            className="font-medium text-slate-900 hover:text-indigo-600 hover:underline transition-colors block w-max"
+          >
+            {data.name}
+          </a>
         </td>
         <td className="px-4 py-3 font-mono text-xs">{data.close}</td>
         <td className="px-4 py-3">
@@ -471,7 +488,14 @@ function PredictionCard({ data, type }: { data: PredictionCardData, type: 'top_c
         <div>
           <div className="flex items-center gap-2 group relative">
             <span className="text-xs text-slate-400 font-mono">#{data.rank}</span>
-            <span className="font-bold text-slate-900 text-lg">{data.name}</span>
+            <a 
+              href={getClsUrl(data.code)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-bold text-slate-900 text-lg hover:text-indigo-600 hover:underline transition-colors"
+            >
+              {data.name}
+            </a>
             <span className="font-mono text-xs text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">{data.code}</span>
             {data.batchLocalRank && (
               <div className="absolute bottom-full left-0 mb-1 hidden group-hover:block w-max bg-slate-800 text-white text-[10px] px-2 py-1 rounded shadow-lg z-10">
