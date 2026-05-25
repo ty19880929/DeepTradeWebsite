@@ -362,7 +362,7 @@ function getClsUrl(code: string) {
   if (!code) return '#';
   const parts = code.split('.');
   if (parts.length === 2) {
-    return `https://www.cls.cn/stock?code=${parts[1].toUpperCase()}${parts[0]}`;
+    return `https://www.cls.cn/stock?code=${parts[1].toLowerCase()}${parts[0]}`;
   }
   return `https://www.cls.cn/stock?code=${code}`;
 }
