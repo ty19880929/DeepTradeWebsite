@@ -443,7 +443,7 @@ function ScreeningRow({ data }: { data: ScreeningItem }) {
                     <tr key={idx}>
                       <td className="py-2 font-mono text-slate-500">{ev.field}</td>
                       <td className="py-2 font-medium text-slate-800">
-                        {String(ev.value)} {ev.unit !== 'none' && <span className="text-slate-400 font-normal">{ev.unit}</span>}
+                        {String(ev.value)} {ev.unit !== 'none' && ev.unit !== '【无】' && <span className="text-slate-400 font-normal">{ev.unit}</span>}
                       </td>
                       <td className="py-2 text-slate-600">{ev.interpretation}</td>
                     </tr>
@@ -564,7 +564,7 @@ function PredictionCard({ data, type }: { data: PredictionCardData, type: 'top_c
               <div key={idx} className="flex justify-between items-start text-xs gap-3">
                 <span className="font-mono text-slate-400 w-1/3 truncate" title={ev.field}>{ev.field}</span>
                 <span className="font-medium text-slate-700 w-1/4 whitespace-nowrap text-right">
-                  {String(ev.value)} {ev.unit !== 'none' && <span className="text-slate-400 font-normal text-[10px]">{ev.unit}</span>}
+                  {String(ev.value)} {ev.unit !== 'none' && ev.unit !== '【无】' && <span className="text-slate-400 font-normal text-[10px]">{ev.unit}</span>}
                 </span>
                 <span className="text-slate-500 w-5/12 text-right line-clamp-1" title={ev.interpretation}>{ev.interpretation}</span>
               </div>
