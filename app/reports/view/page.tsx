@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { ReportViewer } from '@/components/reports/ReportViewer';
+import { MarketReviewViewer } from '@/components/reports/MarketReviewViewer';
 
 /**
  * 报告预览页
@@ -70,7 +71,11 @@ export default async function ReportViewPage({
               failed to load json report data
             </div>
           ) : jsonData ? (
-            <ReportViewer data={jsonData} />
+            jsonData.meta?.window ? (
+              <MarketReviewViewer data={jsonData} />
+            ) : (
+              <ReportViewer data={jsonData} />
+            )
           ) : (
             <div className="absolute inset-0 flex items-center justify-center font-mono uppercase text-xs text-slate-500">
               loading report...
